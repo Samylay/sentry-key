@@ -12,7 +12,7 @@ Instructions for Claude Code sessions on this repository. This is a graded Maste
 
 The UX goal is **zero-touch by default, prompt only on anomaly**: session approval, auto-approval when the phone is proven nearby, per-host policies and rate limits. Auto-approval means malware on the Mac can *use* the key while the phone is nearby (it still can't *steal* it). That tradeoff must stay documented in the threat model.
 
-See `README.md` for the protocol and `docs/PROMPT_JOURNAL.md` for the history of design decisions.
+`docs/ARCHITECTURE.md` is the reference design. Read it before writing code, and keep it in sync when the design changes. `docs/PROMPT_JOURNAL.md` holds the history of design decisions.
 
 ## Hard constraints
 
@@ -21,7 +21,9 @@ See `README.md` for the protocol and `docs/PROMPT_JOURNAL.md` for the history of
 - **Test device:** iPhone 14 Pro. Its UWB chip is not usable, since Macs have none.
 - **Architecture imposed by the brief:** the iPhone is the sensor, the Mac is the hub. The local network is untrusted. Pairing is by QR code. Every message is signed and timestamped.
 - **Crypto:** CryptoKit, Security.framework and LocalAuthentication only. Never write custom crypto. Use AES-GCM, SHA-256/HMAC, P-256 ECDSA, P-256 ECDH + HKDF. Protect against replay with a nonce, a monotonic counter and a timestamp with a tolerance window.
-- **Data protection:** Keychain items `ThisDeviceOnly` and gated on `biometryCurrentSet`. Files use `NSFileProtectionComplete`. Hide the app snapshot in the app switcher. No secrets, keys, host names or locations in logs.
+- **Keys:** two Secure Enclave signing keys, as described in `docs/ARCHITECTURE.md`. The everyday key uses `AfterFirstUnlockThisDeviceOnly` + `.privateKeyUsage`. The strong key uses `WhenUnlockedThisDeviceOnly` + `.privateKeyUsage` + `.biometryCurrentSet`. A separate key-agreement key is used for the channel. Never reuse a key across roles.
+- **Host identity:** the ssh-agent protocol carries no host name. Never trust a host name supplied by the Mac. The phone identifies hosts by verifying `session-bind@openssh.com` and using the host-key fingerprint.
+- **Data protection:** Keychain items are always `ThisDeviceOnly`. The audit log uses `completeUntilFirstUserAuthentication` so it can be written while the phone is locked. Other sensitive files use `complete`. Hide the app snapshot in the app switcher. No secrets, keys, host names or locations in logs; use fingerprints.
 
 ## Rules for AI-generated work (from the course brief)
 

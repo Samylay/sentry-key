@@ -89,3 +89,55 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that the AI rules in `CLAUDE.md` and `CONTRIBUTING.md` match slide 8;
   - that the team agrees with the workflow rules (branches, one reviewer).
 - **Commit / PR:** `ff645f7` (initial scaffold); CLAUDE.md on branch `docs/claude-md`
+
+### P-004 · 2026-11-19 · Architecture document and two AI design reviews
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5), plus two Claude subagents used as reviewers
+- **Goal:** Write the reference architecture, then have it reviewed from an Apple-platform angle and a security angle before saving it.
+- **Prompt (summary):**
+  - "Summarise the pitch and core technologies and modules we'll use."
+  - "Save it as ARCHITECTURE.md and log it, after running two reviewers, one that fetches and uses iOS dev skills and another for security, with skills as well."
+  - No iOS or security skills are installed. Both reviewers instead checked claims against official sources with web fetches.
+- **Earlier decisions made in this conversation:**
+  - A native Swift Mac agent instead of the suggested Chrome extension: an extension cannot serve `SSH_AUTH_SOCK`, and its Bluetooth access needs an open page and a user click.
+  - Roles follow slide 11 of the brief: project lead, security architect, iOS developer, rotating red team.
+- **Output (summary):**
+  - A first draft of `docs/ARCHITECTURE.md`.
+  - The **iOS reviewer** (sources: Apple developer docs, TN3115, TN3127, Core Bluetooth guide) found:
+    - a `biometryCurrentSet` key cannot auto-approve, and Face ID needs the foreground;
+    - approval needs "notification → foreground → Face ID" and does not fit in a ~10 s background wake;
+    - no relaunch after a force-quit, a Bluetooth toggle or before the first unlock; state restoration is opt-in;
+    - `NSFileProtectionComplete` blocks logging while the phone is locked;
+    - background advertising hides services from the Mac, so scan only at pairing and then reconnect by identifier;
+    - missing pieces: BLE framing, timeouts, Info.plist keys; sign the Mac agent with the Personal Team certificate, not ad hoc;
+    - the proximity lock has no documented macOS API.
+  - The **security reviewer** (sources: OpenSSH PROTOCOL.agent, openssh.org/agent-restrict.html, RFC 5656) found:
+    - **critical:** sign requests carry no host name, so the Mac could fake one and per-host policy was invalid; fix by verifying `session-bind@openssh.com` on the phone and keying policy on host-key fingerprints;
+    - **critical:** zero-touch contradicted Face ID gating (same finding as the iOS reviewer);
+    - "proven nearby" does not stop malware on the Mac;
+    - the pairing fingerprint comparison did not authenticate the phone's key;
+    - the channel had no forward secrecy or key separation;
+    - risk of lockout after losing the phone or re-enrolling Face ID;
+    - the audit log could be truncated, and it recorded host names, which CLAUDE.md forbids;
+    - notification spam (MFA fatigue);
+    - the SSH signature format (mpint encoding) was undocumented.
+  - The **revised ARCHITECTURE.md** addresses these with:
+    - two hardware-enforced key tiers plus a separate channel key;
+    - session-bind verification on the phone, and hosts identified by fingerprint;
+    - a one-time secret in the QR code to authenticate the phone's keys at pairing;
+    - an ephemeral signed ECDH handshake with one key per direction;
+    - a mandatory backup key;
+    - a log head mirrored on the Mac;
+    - BLE lifecycle constraints;
+    - the MVP reduced to the strong key only, with the policy engine moved to J4.
+  - **`CLAUDE.md` updated** so it no longer contradicts the design: key tiers, host-identity rule, file protection classes.
+- **Decision:** Accepted the review findings. Two calls of my own:
+  - The log head is mirrored on the Mac instead of the log being signed with yet another key. The iOS reviewer judged the extra key not worth it; the security reviewer suggested it.
+  - Proximity lock kept as a stretch goal, with its uncertainty listed in the document.
+- **Human verification:** PENDING: human to complete. Check:
+  - the claims the reviewers could not verify: CryptoKit's `signature(for:)` hashes with SHA-256 internally and `rawRepresentation` is r‖s; whether Secure Enclave keys survive an app reinstall; whether the stored BLE identifier survives address rotation; whether a macOS central sees overflow-area service UUIDs;
+  - that `session-bind` verification fits the team's capacity at J4: it means verifying Ed25519, ECDSA and RSA host-key signatures on the phone;
+  - that the team agrees to move the policy engine and the everyday key to J4;
+  - the `CLAUDE.md` changes.
+- **Commit / PR:** branch `docs/architecture`
