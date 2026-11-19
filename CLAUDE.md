@@ -7,10 +7,10 @@ Instructions for Claude Code sessions on this repository. This is a graded Maste
 **SentryKey** makes the iPhone a hardware SSH key for the Mac.
 - The private key (`ecdsa-sha2-nistp256`) is generated in the iPhone's Secure Enclave and never leaves it.
 - A Mac agent speaks the `ssh-agent` protocol on `SSH_AUTH_SOCK` and forwards sign requests to the iPhone over an encrypted BLE channel.
-- A policy engine on the iPhone decides whether to auto-approve, ask for Face ID, or deny.
-- Every decision is appended to a hash-chained, signed log.
+- **Every signature requires Face ID**, enforced by the Secure Enclave. The phone shows the server it has verified itself.
+- Every signature is appended to a hash-chained log.
 
-The UX goal is **zero-touch by default, prompt only on anomaly**: session approval, auto-approval when the phone is proven nearby, per-host policies and rate limits. Auto-approval means malware on the Mac can *use* the key while the phone is nearby (it still can't *steal* it). That tradeoff must stay documented in the threat model.
+Automatic (zero-touch) approval was considered and deliberately rejected as too complex (prompt P-005). Don't reintroduce it unless the team asks.
 
 `docs/ARCHITECTURE.md` is the reference design. Read it before writing code, and keep it in sync when the design changes. `docs/PROMPT_JOURNAL.md` holds the history of design decisions.
 
@@ -21,9 +21,13 @@ The UX goal is **zero-touch by default, prompt only on anomaly**: session approv
 - **Test device:** iPhone 14 Pro. Its UWB chip is not usable, since Macs have none.
 - **Architecture imposed by the brief:** the iPhone is the sensor, the Mac is the hub. The local network is untrusted. Pairing is by QR code. Every message is signed and timestamped.
 - **Crypto:** CryptoKit, Security.framework and LocalAuthentication only. Never write custom crypto. Use AES-GCM, SHA-256/HMAC, P-256 ECDSA, P-256 ECDH + HKDF. Protect against replay with a nonce, a monotonic counter and a timestamp with a tolerance window.
-- **Keys:** two Secure Enclave signing keys, as described in `docs/ARCHITECTURE.md`. The everyday key uses `AfterFirstUnlockThisDeviceOnly` + `.privateKeyUsage`. The strong key uses `WhenUnlockedThisDeviceOnly` + `.privateKeyUsage` + `.biometryCurrentSet`. A separate key-agreement key is used for the channel. Never reuse a key across roles.
+- **Keys** (details in `docs/ARCHITECTURE.md`):
+  - SSH signing key in the iPhone's Secure Enclave: `WhenUnlockedThisDeviceOnly` + `.privateKeyUsage` + `.biometryCurrentSet`;
+  - a separate phone identity key and a Mac identity key (in the Mac's Secure Enclave) for the channel handshake;
+  - an offline backup key.
+  Never reuse a key across roles, and never sync keys through iCloud.
 - **Host identity:** the ssh-agent protocol carries no host name. Never trust a host name supplied by the Mac. The phone identifies hosts by verifying `session-bind@openssh.com` and using the host-key fingerprint.
-- **Data protection:** Keychain items are always `ThisDeviceOnly`. The audit log uses `completeUntilFirstUserAuthentication` so it can be written while the phone is locked. Other sensitive files use `complete`. Hide the app snapshot in the app switcher. No secrets, keys, host names or locations in logs; use fingerprints.
+- **Data protection:** Keychain items are always `ThisDeviceOnly`. Files, including the audit log, use `complete` protection. Hide the app snapshot in the app switcher. No secrets, keys, host names or locations in logs; use fingerprints.
 
 ## Rules for AI-generated work (from the course brief)
 

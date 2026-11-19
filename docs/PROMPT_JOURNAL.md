@@ -141,3 +141,23 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that the team agrees to move the policy engine and the everyday key to J4;
   - the `CLAUDE.md` changes.
 - **Commit / PR:** branch `docs/architecture`
+
+### P-005 · 2026-11-19 · Face ID for every signature, passkey framing, "why not Touch ID"
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Simplify the design and settle what SentryKey protects.
+- **Prompt (summary):** The team proposed dropping SSH in favour of Mac and iPhone public keys, with the Mac's public key in the Apple Keychain ("so a compromise would only be on Apple's side"). They also proposed dropping zero-touch for "just full Face ID", and described the app as "a passkey that can be used for anything". Follow-up questions covered the Secure Enclave, whether the Keychain is shared between Mac and iPhone, and whether the Mac has its own Secure Enclave. Final decision: "we'll stick to the SSH plan".
+- **Output (summary):**
+  - **Full Face ID:** agreed. It removes the everyday key, the policy engine, the rate-limit tiers and proximity auto-approval.
+  - **The Keychain argument:** the public key is not secret, so storing it in the Keychain only protects it against replacement. The real risk is malware bypassing the check on the Mac, or reading what it unlocks. The protected secret must be unrecoverable without the phone: SSH, or a vault wrapped with ECDH.
+  - **Passkey framing:** a real WebAuthn passkey is impossible on a free account (it needs AutoFill and associated domains; a USB security key needs a restricted entitlement). Suggested instead: a passkey-style authenticator core with SSH as its first integration.
+  - **The Mac has a Secure Enclave** (checked: Apple M5, Touch ID present). So the Mac identity key goes in the Mac's Secure Enclave, and the document now answers "why not just Touch ID?": a trusted separate display, device separation, one key for several Macs.
+  - **Keychain items are not shared between devices.** Secure Enclave keys never sync, and iCloud is unavailable.
+  - `ARCHITECTURE.md` and `CLAUDE.md` updated: single Face ID-gated SSH key, phone and Mac identity keys, backup key, a new residual-risk statement, `complete` file protection for the log, and zero-touch and WebAuthn listed as out of scope.
+- **Decision:** Accepted. SSH kept as the use case. Face ID required for every signature.
+- **Human verification:** PENDING: human to complete. Check:
+  - the claim that a third-party app cannot act as a WebAuthn passkey provider or a virtual USB security key on a free account;
+  - that a Mac Secure Enclave key works for an app signed with a Personal Team certificate;
+  - the new residual-risk statement (approval is bound to the server, not to the local process).
+- **Commit / PR:** branch `docs/architecture`
