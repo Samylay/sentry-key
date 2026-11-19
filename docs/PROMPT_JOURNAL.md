@@ -71,3 +71,21 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
 - **Decision:** Accepted. The merged design keeps P-000's protocol and protects SSH keys instead of a vault.
 - **Human verification:** <!-- e.g. team discussion on DATE; check the vault flaw against the CryptoKit docs -->
 - **Commit / PR:** N/A (design only)
+
+### P-003 · 2026-11-19 · Repository scaffold, prompt journal and CLAUDE.md
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Set up the GitHub repo and the prompt journal, then encode the project's requirements for future AI sessions.
+- **Prompt (summary):** "We need a prompt journal, and naturally a GitHub repo." Then: "We'll make a CLAUDE.md for the future sessions that will encode the project's requirements."
+- **Output (summary):**
+  - `README.md` (pitch, protocol, constraints, milestones), `CONTRIBUTING.md` (the brief's AI rules, workflow, pitfalls), `.github/pull_request_template.md` (review checklist), `.gitignore`.
+  - This journal, with entries P-000 to P-003.
+  - `CLAUDE.md`: project summary, free-account and hardware constraints, crypto and data-protection rules, the brief's AI rules (no secrets, no new dependencies, no pushing to `main`, flag crypto code for review), and a mandatory procedure for keeping this journal up to date.
+  - Help debugging the first push (a fine-grained token without write permission gave a 403).
+- **Decision:** Accepted. Docs written in English by team choice.
+- **Human verification:** PENDING: human to complete. Check:
+  - that the lists of available and unavailable features in `CLAUDE.md` match slide 4 of the brief;
+  - that the AI rules in `CLAUDE.md` and `CONTRIBUTING.md` match slide 8;
+  - that the team agrees with the workflow rules (branches, one reviewer).
+- **Commit / PR:** `ff645f7` (initial scaffold); CLAUDE.md on branch `docs/claude-md`
