@@ -161,3 +161,14 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that a Mac Secure Enclave key works for an app signed with a Personal Team certificate;
   - the new residual-risk statement (approval is bound to the server, not to the local process).
 - **Commit / PR:** branch `docs/architecture`
+
+### P-006 · 2026-11-19 · Export of the session transcript
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Keep the full conversation behind entries P-001 to P-005 in the repo.
+- **Prompt (verbatim):** "push the transcript of this conv in git, in a dedicated folder"
+- **Output (summary):** A script converted the raw session log to `transcripts/2026-11-19-session-1.md`, keeping messages, replies, tool-call notes and the two reviewer reports, and dropping internal reasoning, raw tool output and metadata. The export was scanned for tokens and personal email addresses before committing; none were found. Added `transcripts/README.md`.
+- **Decision:** Accepted.
+- **Human verification:** PENDING: human to complete. Skim the transcript before the repo is shared, and decide whether the course allows it to be public.
+- **Commit / PR:** branch `docs/architecture`
