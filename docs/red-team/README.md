@@ -11,7 +11,7 @@ It contains:
 
 Scope: our own app, our own devices, and at J4 the other group's app with their agreement. Nothing here is to be run against devices or networks that are not ours.
 
-**Status:** there is no code yet. This guide is aligned with `docs/ARCHITECTURE.md` as proposed in pull request #1 (commit `7ac715f`). If that document changes, this guide has to follow. Items marked **[verify]** are claims about Apple or OpenSSH behaviour that nobody on the team has confirmed on a real device or in the documentation. Confirm them before writing them into a report.
+**Status:** there is no code yet. This guide is aligned with `docs/ARCHITECTURE.md` as proposed in pull request #1 (commit `7ac715f`). If that document changes, this guide has to follow. `docs/THREAT_MODEL.md` was written from the earlier README design and still describes per-host policy, session approval, proximity and fingerprint comparison at pairing. The team works from the architecture document, so those are not tested here (see section 7, item 11). Items marked **[verify]** are claims about Apple or OpenSSH behaviour that nobody on the team has confirmed on a real device or in the documentation. Confirm them before writing them into a report.
 
 ## 1. System model
 
@@ -38,6 +38,18 @@ The flow for one SSH login, from the architecture document:
 4. The phone posts a local notification showing the host-key fingerprint, the name recorded for it, and the user name.
 5. The user taps it, the app comes to the foreground, Face ID unlocks the key, the Secure Enclave signs.
 6. The signature goes back to `ssh`. The Mac gives up after 30 to 60 seconds.
+
+### Trust boundaries
+
+The five boundaries named in `docs/THREAT_MODEL.md`, and where this guide tests each:
+
+| Boundary | What crosses it | Trees |
+|---|---|---|
+| Mac process | `ssh` and any other local process ↔ the agent's socket | T6, T4 |
+| Device | Mac agent ↔ iPhone app over Bluetooth | T2, T3 |
+| Pairing | QR code, camera, and what the user confirms | T1 |
+| iPhone security | Untrusted request data ↔ approval and Secure Enclave | T4, T5, T7 |
+| External | Signatures leave for `ssh` and the server. A compromised Mac can use any signature it obtains | T4.10, T6.7 |
 
 ### Assets
 
@@ -301,6 +313,7 @@ flowchart LR
   q8("What happens after<br/>a decryption failure?"):::q
   q9("Are message type and length<br/>covered by the authentication?"):::q
   q10("What happens when the timestamp<br/>is outside the window?"):::q
+  q11("Does the Mac check the returned signature against<br/>the SSH public key before giving it to ssh?"):::q
   q6 -->|"any, or any higher value"| a5["T2.5<br/>drop, reorder, replay"]:::atk
   q6 -->|"exactly the next one"| ok6(["OK"]):::ok
   q7 -->|"yes"| a6["T2.6<br/>reflection"]:::atk
@@ -311,6 +324,8 @@ flowchart LR
   q9 -->|"yes"| ok9(["OK"]):::ok
   q10 -->|"the request is rejected"| n1["See T8.3"]:::note
   q10 -->|"nothing"| n2["Acceptable only if the<br/>counter check is strict"]:::note
+  q11 -->|"no"| a10["T2.10<br/>wrong signature reaches ssh"]:::atk
+  q11 -->|"yes"| ok10(["OK"]):::ok
 ```
 
 | ID | STRIDE | Attack |
@@ -324,6 +339,7 @@ flowchart LR
 | T2.7 | T | Send forged messages repeatedly on one session. The session should close at the first failure. |
 | T2.8 | I, T | Disconnect and reconnect. Check that keys and counters are new, so that no nonce repeats under an old key. |
 | T2.9 | T | Change the type or length field of a captured message and check whether it is still accepted. |
+| T2.10 | T | Make the phone side return a signature that is malformed, made with another key, or made over other data. Expected: the Mac rejects it before `ssh` sees it. Also check a normal signature end to end with a real login and `ssh-keygen -Y verify`. |
 
 ### T3. Bluetooth transport
 
@@ -574,6 +590,7 @@ flowchart LR
   classDef ok fill:#dff5e3,stroke:#2e8b57,color:#14532d
   classDef note fill:#fff4d6,stroke:#b7791f,color:#5c3d00
   q1("Where is the agent socket<br/>and with what permissions?"):::q
+  q0("Does the agent check which process<br/>connects to the socket?"):::q
   q2("What happens to agent messages other than<br/>list keys, sign and session-bind?"):::q
   q3("Can the user's processes change what<br/>points ssh at the agent?"):::q
   q4("Can they replace the agent binary<br/>or its stored data?"):::q
@@ -586,6 +603,8 @@ flowchart LR
   q4 -->|"the binary"| a5["T6.5<br/>swap the agent"]:::atk
   q4 -->|"the stored public keys"| a10["T6.10<br/>replace stored public keys"]:::atk
   q4 -->|"neither"| ok3(["OK"]):::ok
+  q0 -->|"no"| n1["Any process of the user can ask: all of T4 applies.<br/>The threat model plans this check: report."]:::note
+  q0 -->|"yes"| a11["T6.11<br/>defeat the peer check"]:::atk
 ```
 
 Identity key, forwarding and fallback:
@@ -621,6 +640,7 @@ flowchart LR
 | T6.7 | E | As AT6, with `ssh -A` in use, request signatures for other hosts while the user is connected. The bind carries a forwarding flag: check that the phone uses it. **[verify]** |
 | T6.8 | I | As AT1, read what the Mac keeps: recent signatures, host names, the log viewer's data. |
 | T6.9 | E | Make the phone unreachable and see what the Mac offers. Any key on disk voids the model. |
+| T6.11 | S | If the agent only serves approved programs: connect through one of them (run the real `ssh` with our own options, a renamed copy, or a script the approved program executes) and check whether the request is accepted as legitimate. |
 | T6.10 | S | As AT1, replace the phone's stored identity public key (our phone becomes "the phone"), or the SSH public key the Mac displays (the user installs ours on the next server). |
 
 ### T7. Decision log
@@ -642,6 +662,7 @@ flowchart LR
   q7("What if the log<br/>cannot be written?"):::q
   q8("Does an entry identify what was signed?<br/>(session identifier or hash)"):::q
   q9("Who can read the log<br/>and the Mac's log viewer?"):::q
+  q10("After the app is deleted and reinstalled,<br/>what happens to the log?"):::q
   q1 -->|"only chained"| a1["T7.1<br/>rewrite the whole chain"]:::atk
   q1 -->|"signed by a dedicated key"| ok1(["OK"]):::ok
   q2 -->|"silent resynchronisation"| a2["T7.2<br/>truncate, then reconnect"]:::atk
@@ -659,6 +680,8 @@ flowchart LR
   q8 -->|"no"| n1["Report: an entry cannot be<br/>tied to one login"]:::note
   q8 -->|"yes"| ok7(["OK"]):::ok
   q9 -->|"always try"| a8["T7.8<br/>metadata in the log"]:::atk
+  q10 -->|"a new chain starts and is accepted"| a9["T7.9<br/>erase history by reinstalling"]:::atk
+  q10 -->|"the Mac flags the restart"| ok8(["OK"]):::ok
 ```
 
 | ID | STRIDE | Attack |
@@ -671,6 +694,7 @@ flowchart LR
 | T7.6 | R | Interrupt between signature and log write: kill the app, drop the link. |
 | T7.7 | R | Fill or corrupt the log, then act unrecorded. |
 | T7.8 | I | List what the log and the Mac's log viewer reveal: user names, fingerprints, times. Personal and infrastructure data (MASVS PRIVACY). |
+| T7.9 | R | Delete and reinstall the app, pair again, and compare with the Mac's mirrored head and counter. Expected: the break in the chain is visible and reported, and the old entries are not silently forgotten. |
 
 ### T8. Availability and recovery
 
@@ -801,3 +825,5 @@ Found while aligning this guide with `docs/ARCHITECTURE.md`. Each is a proposal 
 8. **Agent forwarding.** The architecture does not say what the phone does with a forwarded request (T6.7).
 9. **Which Mac is asking?** One key can serve several Macs, so the prompt should name the Mac (T4.9, S10).
 10. **The notification is visible on the lock screen** with a server and a user name (T9.2).
+11. **`docs/THREAT_MODEL.md` and `docs/ARCHITECTURE.md` describe different designs.** The threat model plans per-host policy, session approval, proximity, Face ID only for anomalies, fingerprint comparison at pairing and a signed log. The architecture has none of these. The threat model also lacks the assumption the architecture asks it to state: the Mac is not compromised at pairing time. One of the two documents needs updating before J1 is closed.
+12. **Checking which local process talks to the agent** is planned in the threat model and absent from the architecture (T6.11).
