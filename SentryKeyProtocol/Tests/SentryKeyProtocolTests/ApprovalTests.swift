@@ -219,3 +219,49 @@ struct PromptRateLimiterTests {
         #expect(answers.allSatisfy { $0 })
     }
 }
+
+@Suite("Host key signature from session-bind")
+struct HostKeySignatureTests {
+    /// Python's Ed25519 accepted this signature over the captured session ID.
+    @Test func splitsTheRealEd25519Signature() throws {
+        let bind = Captured.bind
+        let parts = try HostKeySignature.ed25519(hostKey: bind.hostKey, serverSignature: bind.serverSignature)
+        #expect(parts.publicKey.count == 32)
+        #expect(parts.signature.count == 64)
+        #expect(Array(bind.hostKey.suffix(32)) == parts.publicKey)
+    }
+
+    @Test func otherHostKeyTypeIsRefused() {
+        var writer = WireWriter()
+        writer.writeString("ecdsa-sha2-nistp256")
+        writer.writeString([UInt8](repeating: 1, count: 32))
+        #expect(throws: WireError.unexpectedValue("host key algorithm")) {
+            try HostKeySignature.ed25519(hostKey: writer.bytes, serverSignature: Captured.bind.serverSignature)
+        }
+    }
+
+    @Test func shortSignatureIsRefused() {
+        var writer = WireWriter()
+        writer.writeString("ssh-ed25519")
+        writer.writeString([UInt8](repeating: 1, count: 63))
+        #expect(throws: WireError.self) {
+            try HostKeySignature.ed25519(hostKey: Captured.bind.hostKey, serverSignature: writer.bytes)
+        }
+    }
+
+    @Test func trailingBytesAreRefused() {
+        #expect(throws: WireError.trailingBytes(1)) {
+            try HostKeySignature.ed25519(hostKey: Captured.bind.hostKey + [0], serverSignature: Captured.bind.serverSignature)
+        }
+    }
+}
+
+@Suite("Known hosts list")
+struct KnownHostsEntriesTests {
+    @Test func entriesAreSortedByName() throws {
+        var hosts = KnownHosts()
+        try hosts.remember(name: "Work", forFingerprint: "SHA256:gSCfOWCNrZsWczndh62EpEsrQ4ZCCXeGrjP3NJ7RW6s")
+        try hosts.remember(name: "GitHub", forFingerprint: "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU")
+        #expect(hosts.entries.map(\.name) == ["GitHub", "Work"])
+    }
+}

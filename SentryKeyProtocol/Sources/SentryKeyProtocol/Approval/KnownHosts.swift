@@ -19,6 +19,18 @@ public struct KnownHosts: Codable, Equatable, Sendable {
 
     public var count: Int { names.count }
 
+    public struct Entry: Identifiable, Equatable, Sendable {
+        public var id: String { fingerprint }
+        public let fingerprint: String
+        public let name: String
+    }
+
+    /// Every server, sorted by name, for the settings list.
+    public var entries: [Entry] {
+        names.map { Entry(fingerprint: $0.key, name: $0.value) }
+            .sorted { ($0.name, $0.fingerprint) < ($1.name, $1.fingerprint) }
+    }
+
     public func name(forFingerprint fingerprint: String) -> String? {
         names[fingerprint]
     }
