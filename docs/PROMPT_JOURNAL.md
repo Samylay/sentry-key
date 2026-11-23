@@ -183,3 +183,33 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
 - **Decision:** Accepted as a design draft; implementation claims are explicitly marked as planned or requiring validation.
 - **Human verification:** Pending teammate review against the project brief and protocol decisions; no implementation or device verification was performed.
 - **Commit / PR:** Pending.
+
+### P-008 · 2026-11-23 · Could SentryKey work without an iPhone app?
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Check whether the iPhone's built-in passkeys could replace a custom iPhone app.
+- **Prompt (verbatim):** "can't we do it without an app"
+- **Output (summary):** Searched primary sources (OpenSSH `PROTOCOL.u2f`, the SSH-Passkeys paper arXiv 2507.09022, Apple developer forum threads). Technically possible: OpenSSH accepts `webauthn-sk-ecdsa-sha2-nistp256@openssh.com` signatures, and an iPhone passkey can act as a cross-device (hybrid) authenticator. Reasons against it:
+  - iCloud Keychain passkeys sync, so the Mac would hold the same key, which defeats the goal of leaving nothing on the Mac;
+  - the known approach (SSH-Passkeys) needs a PAM module on every server, so `git push` to GitHub would not work; the alternative, a hybrid (caBLE) client on the Mac, is more work than the app;
+  - non-Apple clients make the iPhone scan a QR code for every login, and the macOS system `ssh` lacks FIDO support;
+  - the brief ("make the iPhone a security device") and the iOS developer role assume an iPhone app.
+- **Decision:** No design change. The custom iPhone app stays.
+- **Human verification:** PENDING: human to complete. Check:
+  - whether the course brief requires a custom iPhone app;
+  - the claim that iCloud Keychain passkeys are synced rather than bound to the device.
+- **Commit / PR:** N/A (design question only)
+
+### P-009 · 2026-11-23 · Flow diagrams
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Draw the protocol flows for the J2 "protocol diagram" deliverable.
+- **Prompt (verbatim):** "ok now lets do a diagram for flux"
+- **Output (summary):** `docs/FLOWS.md` with four Mermaid diagrams taken from `ARCHITECTURE.md`: an overview with trust boundaries, pairing, the secure-channel handshake, and signing (including the J3 vs J4 difference and the timeout path). Each diagram was rendered in headless Chrome to check that it parses; a semicolon that broke the signing diagram and a note too wide to read were fixed. `ARCHITECTURE.md` now links to the file.
+- **Decision:** Accepted. Mermaid was chosen because GitHub renders it and it needs no new dependency in the repo.
+- **Human verification:** PENDING: human to complete. Check:
+  - that each diagram matches `ARCHITECTURE.md`, especially the handshake order (the document does not say which side sends first) and the step at which the phone verifies the server;
+  - that the diagrams render on GitHub.
+- **Commit / PR:** PR #1 (branch `docs/architecture`)

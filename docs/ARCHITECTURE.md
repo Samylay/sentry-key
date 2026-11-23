@@ -86,6 +86,8 @@ The shared package holds all protocol, crypto and SSH-format code, so it is writ
 
 ## Main flows
 
+Sequence diagrams of these flows are in [FLOWS.md](FLOWS.md).
+
 ### Pairing (once, both devices in hand)
 1. The Mac shows a QR code containing its identity public key and a **one-time pairing secret**. The QR is the out-of-band channel, so it authenticates the Mac to the phone.
 2. The phone scans it, generates its Secure Enclave keys, and sends their public keys back over BLE, authenticated with the pairing secret. A man-in-the-middle who swaps the phone's keys cannot produce a valid authentication without the QR.
