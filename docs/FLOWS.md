@@ -47,7 +47,7 @@ flowchart LR
 
 **Residual risk (see diagram 4):** your approval is bound to the server, not to the process on the Mac that asked. Malware on the Mac can still obtain one signature for a server you approve.
 
-**Not drawn:** the offline backup SSH key. It is generated at setup and kept on paper or another device, away from both the Mac and the phone.
+**Not drawn here:** the recovery key. It exists only on paper and is covered in diagram 5.
 
 ## 2. Pairing (once, both devices in hand)
 
@@ -71,12 +71,12 @@ sequenceDiagram
   M->>M: Store both phone public keys and the BLE identifier
   M->>M: Discard the pairing secret
   M->>U: Show the SSH public key to install on servers
-  Note over U,P: [J4] Backup key flow: an offline backup SSH key<br/>and a list of the servers each key is installed on
+  Note over U,P: [J4] Recovery key setup follows (diagram 5)
 ```
 
 - Only public keys cross between the devices. The private keys never leave their Secure Enclave.
 - The Mac scans for the phone only here. iOS hides advertised services from non-iOS scanners when the app is in the background, so later connections use the stored BLE identifier (diagram 3).
-- **Not specified in ARCHITECTURE.md:** the exact construction that authenticates the phone's keys with the pairing secret, how long the QR code stays valid, and where the backup key is generated.
+- **Not specified in ARCHITECTURE.md:** the exact construction that authenticates the phone's keys with the pairing secret, and how long the QR code stays valid.
 
 ## 3. Secure channel (every BLE connection)
 
@@ -163,3 +163,55 @@ sequenceDiagram
 - What the phone shows for a host-key fingerprint it has never seen, and where the recorded name comes from.
 - What happens when Face ID fails or you dismiss the notification.
 - When the phone sends the new audit log head to the Mac.
+
+## 5. Recovery key `[J4]`
+
+Secure Enclave keys cannot be exported, so recovery uses a second SSH key that exists only on paper. It is installed on every server next to the main key, before anything goes wrong. Details and residual risks are in [ARCHITECTURE.md](ARCHITECTURE.md#recovery-j4).
+
+### 5a. Setup (right after pairing)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as You
+  participant M as Mac agent
+  participant P as iPhone app
+
+  P->>P: Generate a P-256 recovery key in memory,<br/>not in the Secure Enclave
+  P->>U: Show the recovery code once:<br/>base32 groups + checksum, app snapshot hidden
+  U->>U: Write the code on paper
+  U->>P: Type back two random groups
+  P->>P: Erase the private key,<br/>keep the public key and fingerprint
+  P->>M: Recovery public key, over the secure channel
+  M->>M: Key registry: record both fingerprints<br/>for each user@host you set up
+  M->>U: Show both public keys to install on each server
+```
+
+### 5b. Rotating keys after a loss
+
+The same flow covers a lost phone (pair a new one first) and a Face ID re-enrolment (the app creates a new SSH key, no re-pairing).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as You
+  participant P as New or same iPhone app
+  participant M as Mac agent
+  participant S as SSH server
+
+  P->>M: New SSH public key and new recovery public key
+  U->>M: Recovery mode: type the old recovery code
+  M->>M: Check the checksum, rebuild the key in memory only,<br/>serve it on the agent socket for at most 15 min
+  loop Each user@host in the key registry
+    M->>S: Log in with the recovery key
+    M->>U: Show the lines to remove and add
+    U->>S: Replace the old SSH and recovery public keys<br/>with the new ones in authorized_keys
+  end
+  M->>M: Erase the recovery key from memory
+  M->>M: Mark the old fingerprints as revoked,<br/>list servers that still have them
+```
+
+- A lost Mac needs no server changes: no SSH private key is on the Mac. Remove its pairing on the phone and pair the new Mac.
+- Services managed through a web account, such as GitHub, need no recovery key: replace the keys in the account settings.
+- The old recovery code counts as used once typed into a Mac, so the new phone always issues a new one.
+- **Not specified in ARCHITECTURE.md:** how the user is guided when a server in the registry is unreachable during rotation.

@@ -24,7 +24,7 @@ Automatic (zero-touch) approval was considered and deliberately rejected as too 
 - **Keys** (details in `docs/ARCHITECTURE.md`):
   - SSH signing key in the iPhone's Secure Enclave: `WhenUnlockedThisDeviceOnly` + `.privateKeyUsage` + `.biometryCurrentSet`;
   - a separate phone identity key and a Mac identity key (in the Mac's Secure Enclave) for the channel handshake;
-  - an offline backup key.
+  - a recovery key that exists only on paper, as a recovery code (see Recovery in `docs/ARCHITECTURE.md`).
   Never reuse a key across roles, and never sync keys through iCloud.
 - **Host identity:** the ssh-agent protocol carries no host name. Never trust a host name supplied by the Mac. The phone identifies hosts by verifying `session-bind@openssh.com` and using the host-key fingerprint.
 - **Data protection:** Keychain items are always `ThisDeviceOnly`. Files, including the audit log, use `complete` protection. Hide the app snapshot in the app switcher. No secrets, keys, host names or locations in logs; use fingerprints.
