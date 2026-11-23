@@ -72,6 +72,17 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
 - **Human verification:** <!-- e.g. team discussion on DATE; check the vault flaw against the CryptoKit docs -->
 - **Commit / PR:** N/A (design only)
 
+### P-003 · 2026-11-23 · Document SentryKey STRIDE model
+
+- **Author:** <!-- your name -->
+- **Tool / model:** OpenAI Codex (GPT-6)
+- **Goal:** Document the project's J1 STRIDE threat model based on the validated README design.
+- **Prompt (summary or verbatim):** Continue from J1, use README as the subject reference, follow this prompt journal's logging practice, and document SentryKey's STRIDE model.
+- **Output (summary):** Added `docs/THREAT_MODEL.md` with system goals, scope and assumptions, trust boundaries, one analysis for each STRIDE category, planned controls and verification ideas, residual risks, and J1 follow-up points. Linked it from the README milestone table.
+- **Decision:** Accepted as a design draft; implementation claims are explicitly marked as planned or requiring validation.
+- **Human verification:** Pending teammate review against the project brief and protocol decisions; no implementation or device verification was performed.
+- **Commit / PR:** Pending.
+
 ### P-007 · 2026-11-23 · Red team onboarding and attack decision trees
 
 - **Author:** michael-rousseau
