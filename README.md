@@ -8,7 +8,7 @@ Master 2 group project: *"Make the iPhone a security device"*.
 
 ## How it works
 
-```
+```sh
  ssh / git ──► SentryKey agent (Mac) ══ encrypted BLE channel ══► SentryKey app (iPhone)
                SSH_AUTH_SOCK                                     policy engine
                forwards sign requests                            Secure Enclave signs (P-256)
@@ -44,6 +44,7 @@ Master 2 group project: *"Make the iPhone a security device"*.
 | Path | Contents |
 |---|---|
 | `docs/PROMPT_JOURNAL.md` | Mandatory log of every AI prompt used on the project |
+| `docs/red-team/README.md` | Red team guide: attacker model, BLE primer, attack decision trees |
 | `CONTRIBUTING.md` | Team rules: reviews, AI usage, commits |
 | `.github/pull_request_template.md` | Review checklist applied to every merge |
 

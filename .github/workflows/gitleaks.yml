@@ -1,0 +1,29 @@
+name: gitleaks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are pinned to a commit: a tag can be moved, a commit cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: a secret removed in a later commit is still leaked.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same version as .pre-commit-config.yaml, so both report the same findings.
+          GITLEAKS_VERSION: 8.30.1
+          # Commenting on pull requests needs a write token. The job fails on a
+          # finding and the details are in the job summary, which is enough.
+          GITLEAKS_ENABLE_COMMENTS: false
