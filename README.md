@@ -10,18 +10,20 @@ Master 2 group project: *"Make the iPhone a security device"*.
 
 ```sh
  ssh / git ──► SentryKey agent (Mac) ══ encrypted BLE channel ══► SentryKey app (iPhone)
-               SSH_AUTH_SOCK                                     policy engine
+               SSH_AUTH_SOCK                                     Face ID on every request
                forwards sign requests                            Secure Enclave signs (P-256)
           ◄── signature ◄════════════════════════════════════════
 ```
 
 1. **Pairing:** the Mac shows a QR code with its public key and fingerprint. The iPhone scans it and both sides confirm the fingerprint, then they derive a session channel (ECDH P-256 + HKDF + AES-GCM).
 2. **Sign request:** `ssh` asks the Mac agent for a signature. The agent forwards the request (host, key, nonce, counter, timestamp) to the iPhone.
-3. **Policy:** the iPhone decides whether to auto-approve, ask for Face ID, or deny (per-host rules, session approval, proximity, rate limits).
-4. **Signature:** the Secure Enclave signs with an `ecdsa-sha2-nistp256` key protected by `biometryCurrentSet`. The Mac agent returns the signature to `ssh`.
-5. **Log:** every decision is appended to a hash-chained, signed log.
+3. **Approval:** the iPhone shows a local notification. The user opens it, reads the request (host, key) and approves with Face ID, or denies it. There is no auto-approval, no session approval and no reuse window: every signature needs its own Face ID.
+4. **Signature:** the Secure Enclave signs with an `ecdsa-sha2-nistp256` key protected by `biometryCurrentSet`. Each request uses a fresh `LAContext`, so a previous Face ID can never be reused. The Mac agent returns the signature to `ssh`.
+5. **Log:** every approval and denial is appended to a hash-chained, signed log.
 
-**UX goal:** zero-touch by default, prompt only when something looks wrong.
+**Security goal:** Face ID on every signature, enforced by the Secure Enclave rather than by app code. Even a bug in the app or a compromised Mac cannot get a signature without the user's face.
+
+**Trade-off:** each `ssh` connection or `git push` costs one Face ID. We accept this cost in exchange for a guarantee that the hardware enforces.
 
 ## Constraints
 

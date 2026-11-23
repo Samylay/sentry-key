@@ -267,3 +267,17 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - the ten open questions in section 7 of the guide: they are the assistant's reading of the architecture and none has been discussed with the team;
   - the `gitleaks` workflow on GitHub: it was validated locally only and has never run there.
 - **Commit / PR:**
+
+### P-008 · 2026-11-23 · Review of the repo against the brief, then Face ID on every signature
+
+- **Author:** Axel Maral
+- **Tool / model:** Claude (Claude Opus 5.5)
+- **Goal:** Check the scaffold against the brief, then remove the conflict between "zero-touch" and a `biometryCurrentSet` key.
+- **Prompt (summary):** Shared the brief (PDF) and the repo link with no instructions, then: "edit the project to require Face ID every time".
+- **Output (summary):**
+  - **Review:** a Secure Enclave key protected by `biometryCurrentSet` requires Face ID for every use, and Face ID cannot be shown while the app is in the background. "Zero-touch by default" is therefore impossible without turning Face ID into a software gate in the app.
+  - **Other points raised:** the host name is not part of the SSH sign request (verify it with `session-bind@openssh.com`); SentryKey prevents key theft, not misuse by malware on the Mac; Secretive is prior art; a backup key is needed for recovery; SSH signatures need converting from raw/DER to `mpint`.
+  - **Edit:** README updated. Face ID on every signature, approval through a local notification, a fresh `LAContext` per request, no auto-approval or session approval.
+- **Decision:** Accepted. Supersedes the zero-touch policy layer chosen in P-001.
+- **Human verification:** <!-- e.g. confirm on the iPhone 14 Pro that a biometryCurrentSet key prompts on every signature and that a background request cannot sign -->
+- **Commit / PR:** branch `docs/faceid-every-signature`
