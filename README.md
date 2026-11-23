@@ -33,7 +33,7 @@ Master 2 group project: *"Make the iPhone a security device"*.
 
 | Milestone | Deliverable | Status |
 |---|---|---|
-| J1 · Scoping | Validated topic + STRIDE threat model | ⏳ |
+| J1 · Scoping | Validated topic + [STRIDE threat model](docs/THREAT_MODEL.md) | ✅ |
 | J2 · Architecture | Protocol diagram, justified crypto choices | ⏳ |
 | J3 · MVP | `git push` signed by the iPhone | ⏳ |
 | J4 · Cross-audit | Audit of another group's app (OWASP MASVS) + fixes to ours | ⏳ |
