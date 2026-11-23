@@ -173,17 +173,6 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
 - **Human verification:** PENDING: human to complete. Skim the transcript before the repo is shared, and decide whether the course allows it to be public.
 - **Commit / PR:** branch `docs/architecture`
 
-### P-007 · 2026-11-23 · Document SentryKey STRIDE model
-
-- **Author:** <!-- your name -->
-- **Tool / model:** OpenAI Codex (GPT-6)
-- **Goal:** Document the project's J1 STRIDE threat model based on the validated README design.
-- **Prompt (summary or verbatim):** Continue from J1, use README as the subject reference, follow this prompt journal's logging practice, and document SentryKey's STRIDE model.
-- **Output (summary):** Added `docs/THREAT_MODEL.md` with system goals, scope and assumptions, trust boundaries, one analysis for each STRIDE category, planned controls and verification ideas, residual risks, and J1 follow-up points. Linked it from the README milestone table.
-- **Decision:** Accepted as a design draft; implementation claims are explicitly marked as planned or requiring validation.
-- **Human verification:** Pending teammate review against the project brief and protocol decisions; no implementation or device verification was performed.
-- **Commit / PR:** Pending.
-
 ### P-007 · 2026-11-23 · Red team onboarding and attack decision trees
 
 - **Author:** michael-rousseau
@@ -268,7 +257,98 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - the `gitleaks` workflow on GitHub: it was validated locally only and has never run there.
 - **Commit / PR:**
 
-### P-008 · 2026-11-23 · Review of the repo against the brief, then Face ID on every signature
+### P-008 · 2026-11-23 · Could SentryKey work without an iPhone app?
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Check whether the iPhone's built-in passkeys could replace a custom iPhone app.
+- **Prompt (verbatim):** "can't we do it without an app"
+- **Output (summary):** Searched primary sources (OpenSSH `PROTOCOL.u2f`, the SSH-Passkeys paper arXiv 2507.09022, Apple developer forum threads). Technically possible: OpenSSH accepts `webauthn-sk-ecdsa-sha2-nistp256@openssh.com` signatures, and an iPhone passkey can act as a cross-device (hybrid) authenticator. Reasons against it:
+  - iCloud Keychain passkeys sync, so the Mac would hold the same key, which defeats the goal of leaving nothing on the Mac;
+  - the known approach (SSH-Passkeys) needs a PAM module on every server, so `git push` to GitHub would not work; the alternative, a hybrid (caBLE) client on the Mac, is more work than the app;
+  - non-Apple clients make the iPhone scan a QR code for every login, and the macOS system `ssh` lacks FIDO support;
+  - the brief ("make the iPhone a security device") and the iOS developer role assume an iPhone app.
+- **Decision:** No design change. The custom iPhone app stays.
+- **Human verification:** PENDING: human to complete. Check:
+  - whether the course brief requires a custom iPhone app;
+  - the claim that iCloud Keychain passkeys are synced rather than bound to the device.
+- **Commit / PR:** N/A (design question only)
+
+### P-009 · 2026-11-23 · Flow diagrams
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Draw the protocol flows for the J2 "protocol diagram" deliverable.
+- **Prompt (verbatim):** "ok now lets do a diagram for flux"
+- **Output (summary):** `docs/FLOWS.md` with four Mermaid diagrams taken from `ARCHITECTURE.md`: an overview with trust boundaries, pairing, the secure-channel handshake, and signing (including the J3 vs J4 difference and the timeout path). Each diagram was rendered in headless Chrome to check that it parses; a semicolon that broke the signing diagram and a note too wide to read were fixed. `ARCHITECTURE.md` now links to the file.
+- **Decision:** Accepted. Mermaid was chosen because GitHub renders it and it needs no new dependency in the repo.
+- **Human verification:** PENDING: human to complete. Check:
+  - that each diagram matches `ARCHITECTURE.md`, especially the handshake order (the document does not say which side sends first) and the step at which the phone verifies the server;
+  - that the diagrams render on GitHub.
+- **Commit / PR:** PR #1 (branch `docs/architecture`)
+
+### P-010 · 2026-11-23 · Adversarial review of the flow diagrams
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5), with a Claude Fable 5.2 subagent as reviewer and editor
+- **Goal:** Have the diagrams from P-009 attacked by a second model, then fix what it finds.
+- **Prompt (verbatim):** "adversarial review and opti it by a fable agent"
+- **Output (summary):** The reviewer checked `docs/FLOWS.md` against `ARCHITECTURE.md` and `CLAUDE.md` and rewrote it. Main fixes:
+  - added the residual risk (approval is bound to the server, not to the local process), which was missing;
+  - a "trusted for / not trusted for" table, because the old boundary label hid that the Mac is trusted at pairing time;
+  - the handshake no longer implies facts the design does not state (who sends first, whether nonces are signed); these are listed as "not specified";
+  - added replay protection, reconnection by stored identifier, and the audit-log head check;
+  - the timeout branch now covers denial, and the error text no longer reuses the "phone unreachable" message;
+  - consistent `[J4]` and `[Stretch]` tags, consistent actor names, and an overview redrawn without crossing edges.
+  The diagrams were rendered again in headless Chrome: all four parse.
+- **Problems the reviewer found in `ARCHITECTURE.md` (not changed, for the team to decide):**
+  - The handshake signature covers only each side's own ephemeral key, so a recorded handshake message can be replayed. A common fix is to sign both ephemeral keys, both nonces and both identities.
+  - Where the host name "recorded on first use" comes from is not stated, nor what the phone shows for an unknown fingerprint.
+  - In J3, how the Mac learns the host name is not stated, since the ssh-agent protocol carries none.
+  - SSHSIG (git commit signing) has no session-bind, so what the phone shows for it is not defined.
+  - The pairing authentication construction and the QR code's validity period are not defined. Anyone who photographs the QR code holds the secret.
+  - Timestamps appear only in the module list, not in the channel flow.
+  - Undefined failure paths: explicit denial vs timeout, Face ID failure, and what happens on a log head mismatch.
+- **Decision:** Accepted the diagram changes. The architecture issues are recorded here for the team.
+- **Human verification:** PENDING: human to complete. Check:
+  - every "not specified" point, and decide which ones ARCHITECTURE.md should settle;
+  - the handshake replay concern before any channel code is written;
+  - that the diagrams render on GitHub.
+- **Commit / PR:** PR #1 (branch `docs/architecture`)
+
+### P-011 · 2026-11-23 · Recovery key system
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Replace the vague "offline backup key" with a complete recovery design.
+- **Prompt (verbatim):** "we should have a recovery keys system"
+- **Output (summary):** Looked up how hardware SSH keys handle recovery (Yubico's SSH guide and backup advice, Secretive): a Secure Enclave key cannot be exported, so the standard answer is a second key installed on every server in advance. Added a "Recovery (J4)" section to `ARCHITECTURE.md`:
+  - a P-256 recovery key generated by the iPhone app in memory, shown once as a recovery code (base32 groups plus a SHA-256 checksum), checked by typing back two groups, then erased from the phone;
+  - a key registry on the Mac listing which key fingerprints are installed for which `user@host`;
+  - a table of what each loss destroys (phone, Face ID re-enrolment, app deletion, Mac) and what to do;
+  - rotation: the Mac rebuilds the recovery key in memory for at most 15 minutes, you replace the keys on each server, and the old code is treated as used;
+  - residual risks (a found paper code gives access without Face ID; Mac malware during recovery) and the alternatives considered (a second iPhone, a YubiKey).
+  Also added modules `RecoveryCode`, `RecoverySetup`, `KeyRegistry` and `RecoveryMode`, updated the J4 scope, synced `CLAUDE.md`, and added diagram 5 (setup and rotation) to `FLOWS.md`, rendered in headless Chrome.
+- **Decision:** Accepted as the proposed design, pending team review. The recovery key is P-256 rather than Ed25519 so it reuses the `SSHWire` code and stays within the algorithms CLAUDE.md allows.
+- **Human verification:** PENDING: human to complete. Check:
+  - that `P256.Signing.PrivateKey(rawRepresentation:)` round-trips the 32-byte code on the device;
+  - that the team accepts the residual risks of a paper code, and the 15-minute window;
+  - that the key registry storing `user@host` on the Mac is acceptable (it is not a log, but it does hold host names);
+  - whether `docs/THREAT_MODEL.md`, which says recovery is not specified, should now reference this section.
+- **Commit / PR:** PR #1 (branch `docs/architecture`)
+
+### P-012 · 2026-11-23 · Document SentryKey STRIDE model
+
+- **Author:** <!-- your name -->
+- **Tool / model:** OpenAI Codex (GPT-6)
+- **Goal:** Document the project's J1 STRIDE threat model based on the validated README design.
+- **Prompt (summary or verbatim):** Continue from J1, use README as the subject reference, follow this prompt journal's logging practice, and document SentryKey's STRIDE model.
+- **Output (summary):** Added `docs/THREAT_MODEL.md` with system goals, scope and assumptions, trust boundaries, one analysis for each STRIDE category, planned controls and verification ideas, residual risks, and J1 follow-up points. Linked it from the README milestone table.
+- **Decision:** Accepted as a design draft; implementation claims are explicitly marked as planned or requiring validation.
+- **Human verification:** Pending teammate review against the project brief and protocol decisions; no implementation or device verification was performed.
+- **Commit / PR:** Pending.
+
+### P-013 · 2026-11-23 · Review of the repo against the brief, then Face ID on every signature
 
 - **Author:** Axel Maral
 - **Tool / model:** Claude (Claude Opus 5.5)
