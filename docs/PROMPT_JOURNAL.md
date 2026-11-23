@@ -173,16 +173,89 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
 - **Human verification:** PENDING: human to complete. Skim the transcript before the repo is shared, and decide whether the course allows it to be public.
 - **Commit / PR:** branch `docs/architecture`
 
-### P-007 · 2026-11-23 · Document SentryKey STRIDE model
+### P-007 · 2026-11-23 · Red team onboarding and attack decision trees
 
-- **Author:** <!-- your name -->
-- **Tool / model:** OpenAI Codex (GPT-6)
-- **Goal:** Document the project's J1 STRIDE threat model based on the validated README design.
-- **Prompt (summary or verbatim):** Continue from J1, use README as the subject reference, follow this prompt journal's logging practice, and document SentryKey's STRIDE model.
-- **Output (summary):** Added `docs/THREAT_MODEL.md` with system goals, scope and assumptions, trust boundaries, one analysis for each STRIDE category, planned controls and verification ideas, residual risks, and J1 follow-up points. Linked it from the README milestone table.
-- **Decision:** Accepted as a design draft; implementation claims are explicitly marked as planned or requiring validation.
-- **Human verification:** Pending teammate review against the project brief and protocol decisions; no implementation or device verification was performed.
-- **Commit / PR:** Pending.
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Get a late-joining teammate up to speed for the red team role and prepare a design-level attack plan.
+- **Prompt (summary):** Several prompts over 2026-11-19 and 2026-11-23: (1) explain the project from the brief and the repository; (2) "do you see places where I could find flaws?"; (3) write a README focused on decision trees covering every case, with an explanation of how Bluetooth works; (4) correction after reading it: Bluetooth is optional and the project covers SSH only; (5) make the trees more readable as diagrams. Then: install a Mermaid renderer to check the diagrams; write one clean prompt covering the whole guide; propose dependency and secret scanning tools. Last: "aligne sur doc/Arch", after the assistant reported that the guide contradicted `docs/ARCHITECTURE.md` from pull request #1.
+- **Consolidated prompt:** written afterwards, on 2026-11-23, to restate the whole conversation as one request. It was not the prompt actually sent. It is kept so that a teammate can regenerate or extend the guide.
+
+  ```text
+  You are helping the red team of SentryKey, a Master 2 group project.
+
+  Read these first: docs/ARCHITECTURE.md (the reference design), CLAUDE.md,
+  README.md, CONTRIBUTING.md, docs/PROMPT_JOURNAL.md and the brief
+  "Projet M2.pdf". Do not rely on anything that is not in them, and do not
+  contradict the architecture document: where you disagree with it, say so
+  in a separate list of open questions.
+
+  Context
+  - SentryKey makes an iPhone act as a hardware SSH key for a Mac. The SSH
+    key is a P-256 key in the iPhone's Secure Enclave, and every signature
+    requires Face ID. A Mac agent speaks the ssh-agent protocol and forwards
+    sign requests to the iPhone over Bluetooth Low Energy (iPhone peripheral,
+    Mac central), inside an application channel: ephemeral ECDH signed by
+    identity keys, HKDF, AES-GCM. The phone verifies the server itself with
+    session-bind@openssh.com. Decisions go to a hash-chained log whose head
+    is mirrored on the Mac.
+  - Automatic approval is out of scope. Git commit signing and a Mac
+    proximity lock are stretch goals.
+  - Constraints: free Apple developer account, iPhone 14 Pro, Apple
+    frameworks only.
+  - There is no code yet. Work from the design.
+
+  Task
+  Write docs/red-team/README.md, in English, for a teammate who takes the red
+  team role without having followed the project. It must let them review the
+  design now and test the implementation later. Sections:
+
+  1. System model: a diagram of the components and trust boundaries, a table
+     of assets, a table of attackers (malware running as the user on the Mac,
+     radio attacker, relay, phone thief, Mac thief, malicious server, the
+     legitimate user denying an action), a table of what the design already
+     answers and which test verifies it, and a diagram that maps each
+     attacker to the trees to open.
+  2. Bluetooth Low Energy primer, limited to what matters for attacking this
+     system: radio, roles, GATT and framing, why link-level pairing is not
+     relied on, how SentryKey uses BLE and what that exposes before the
+     handshake, signal strength and relay, tools.
+  3. Decision trees, one per area: pairing, application channel, Bluetooth
+     transport, sign requests and approval, keys and storage on the iPhone,
+     Mac agent, decision log, availability and recovery, platform hygiene.
+     Each tree asks questions about the implementation, branches on every
+     possible answer including the secure one, and ends in an attack to try,
+     a secure outcome, or something to report. Draw them as Mermaid
+     flowcharts, left to right, several small diagrams per tree, with
+     questions in blue, attacks in red, secure answers in green and notes in
+     yellow. Give every attack a stable ID such as T4.7. Under each tree, a
+     table with ID, STRIDE category and the exact action to perform.
+  4. State matrix: combinations of iPhone state and Mac state, with the
+     outcome expected for the same ssh command in each.
+  5. What to test at each milestone, given what the design defers to J4.
+  6. A finding report template.
+  7. Questions the design leaves open.
+
+  Rules
+  - Mark every claim about Apple or OpenSSH behaviour that you have not
+    confirmed in documentation with [verify]. Do not invent API names,
+    entitlements or protocol fields.
+  - Design-level only: no exploit code, and nothing aimed at devices or
+    networks other than the team's own.
+  - Say which outcomes are your proposal rather than a team decision.
+  - Do not add dependencies or tools to the repository.
+  ```
+- **Output (summary):**
+  - Project summary and a ranked list of design weaknesses. The main ones: the Mac agent is a signing oracle for malware when auto-approval is on; the host name shown to the iPhone is an unverified claim by the Mac; zero-touch conflicts with a `biometryCurrentSet` key; BLE proximity is relayable.
+  - `docs/red-team/README.md`: system and attacker model, local network primer, nine attack decision trees (pairing, channel, transport, sign requests, key storage, Mac agent, log, availability, platform), a state matrix and a finding template. After prompt 4, the transport was changed from BLE to the local network, the BLE primer moved to an appendix with its own optional subtree, and git commit signing was marked out of scope. After prompt 5, the text trees became Mermaid flowcharts, each followed by a table of attacks. After the last prompt, the guide was rewritten against `docs/ARCHITECTURE.md`: Bluetooth primer back in the main text, local network material removed, trees redone for Face ID on every signature and session-bind verification, plus a table of what the design already answers, a per-milestone plan and ten open questions for the team.
+  - Secret scanning with Gitleaks 8.30.1: `.pre-commit-config.yaml`, `.github/workflows/gitleaks.yml` (actions pinned to commits) and a section in `CONTRIBUTING.md`. Three other tools were proposed and not selected: a dependency allowlist check with Dependabot, GitHub's native secret scanning and CodeQL, MobSF for the J4 audit.
+- **Decision:** Modified. The first version of the guide was written against `main` and assumed a local network transport and automatic approval, on the author's indication that Bluetooth was optional. It contradicted `docs/ARCHITECTURE.md` (pull request #1) and was rewritten to follow it. Of the four tools proposed, only Gitleaks was selected. The entry is numbered P-007 because P-003 to P-006 are used on the unmerged `docs/architecture` branch.
+- **Human verification:** PENDING: human to complete. To check:
+  - every item marked `[verify]` in the guide: ssh-agent protocol and `session-bind@openssh.com`, background behaviour of the iOS app over Bluetooth, the `publickey-hostbound` method, Secure Enclave use from a macOS agent on a free account;
+  - the guide against `docs/ARCHITECTURE.md` again if pull request #1 changes before it is merged;
+  - the ten open questions in section 7 of the guide: they are the assistant's reading of the architecture and none has been discussed with the team;
+  - the `gitleaks` workflow on GitHub: it was validated locally only and has never run there.
+- **Commit / PR:**
 
 ### P-008 · 2026-11-23 · Could SentryKey work without an iPhone app?
 
@@ -263,3 +336,28 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that the key registry storing `user@host` on the Mac is acceptable (it is not a log, but it does hold host names);
   - whether `docs/THREAT_MODEL.md`, which says recovery is not specified, should now reference this section.
 - **Commit / PR:** PR #1 (branch `docs/architecture`)
+
+### P-012 · 2026-11-23 · Document SentryKey STRIDE model
+
+- **Author:** <!-- your name -->
+- **Tool / model:** OpenAI Codex (GPT-6)
+- **Goal:** Document the project's J1 STRIDE threat model based on the validated README design.
+- **Prompt (summary or verbatim):** Continue from J1, use README as the subject reference, follow this prompt journal's logging practice, and document SentryKey's STRIDE model.
+- **Output (summary):** Added `docs/THREAT_MODEL.md` with system goals, scope and assumptions, trust boundaries, one analysis for each STRIDE category, planned controls and verification ideas, residual risks, and J1 follow-up points. Linked it from the README milestone table.
+- **Decision:** Accepted as a design draft; implementation claims are explicitly marked as planned or requiring validation.
+- **Human verification:** Pending teammate review against the project brief and protocol decisions; no implementation or device verification was performed.
+- **Commit / PR:** Pending.
+
+### P-013 · 2026-11-23 · Review of the repo against the brief, then Face ID on every signature
+
+- **Author:** Axel Maral
+- **Tool / model:** Claude (Claude Opus 5.5)
+- **Goal:** Check the scaffold against the brief, then remove the conflict between "zero-touch" and a `biometryCurrentSet` key.
+- **Prompt (summary):** Shared the brief (PDF) and the repo link with no instructions, then: "edit the project to require Face ID every time".
+- **Output (summary):**
+  - **Review:** a Secure Enclave key protected by `biometryCurrentSet` requires Face ID for every use, and Face ID cannot be shown while the app is in the background. "Zero-touch by default" is therefore impossible without turning Face ID into a software gate in the app.
+  - **Other points raised:** the host name is not part of the SSH sign request (verify it with `session-bind@openssh.com`); SentryKey prevents key theft, not misuse by malware on the Mac; Secretive is prior art; a backup key is needed for recovery; SSH signatures need converting from raw/DER to `mpint`.
+  - **Edit:** README updated. Face ID on every signature, approval through a local notification, a fresh `LAContext` per request, no auto-approval or session approval.
+- **Decision:** Accepted. Supersedes the zero-touch policy layer chosen in P-001.
+- **Human verification:** <!-- e.g. confirm on the iPhone 14 Pro that a biometryCurrentSet key prompts on every signature and that a background request cannot sign -->
+- **Commit / PR:** branch `docs/faceid-every-signature`

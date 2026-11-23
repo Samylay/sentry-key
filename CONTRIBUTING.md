@@ -35,6 +35,17 @@ Check every AI-generated change for these:
 - Logs that print tokens, keys, host names or locations
 - "It compiles" is not "it's secure"
 
+## Secret scanning
+
+[Gitleaks](https://github.com/gitleaks/gitleaks) checks every change for hard-coded secrets, in two places:
+
+- **On your machine, before each commit.** Install [pre-commit](https://pre-commit.com), then run `pre-commit install` once in this repository. A commit that contains a secret is refused.
+- **On GitHub, on every pull request and on `main`.** The `gitleaks` workflow scans the full history and fails if it finds a secret.
+
+If a scan fails, do not just delete the secret in a new commit: it stays in the history. Rotate the secret, record it in the prompt journal if it went through an AI tool, and tell the team.
+
+If the finding is a false positive, add its fingerprint to a `.gitleaksignore` file and say why in the pull request.
+
 ## Commits
 
 - Use short, imperative messages: `Add QR pairing screen`, `Fix nonce reuse in channel`.
