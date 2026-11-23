@@ -72,7 +72,119 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
 - **Human verification:** <!-- e.g. team discussion on DATE; check the vault flaw against the CryptoKit docs -->
 - **Commit / PR:** N/A (design only)
 
-### P-003 · 2026-11-23 · Review of the repo against the brief, then Face ID on every signature
+### P-003 · 2026-11-19 · Repository scaffold, prompt journal and CLAUDE.md
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Set up the GitHub repo and the prompt journal, then encode the project's requirements for future AI sessions.
+- **Prompt (summary):** "We need a prompt journal, and naturally a GitHub repo." Then: "We'll make a CLAUDE.md for the future sessions that will encode the project's requirements."
+- **Output (summary):**
+  - `README.md` (pitch, protocol, constraints, milestones), `CONTRIBUTING.md` (the brief's AI rules, workflow, pitfalls), `.github/pull_request_template.md` (review checklist), `.gitignore`.
+  - This journal, with entries P-000 to P-003.
+  - `CLAUDE.md`: project summary, free-account and hardware constraints, crypto and data-protection rules, the brief's AI rules (no secrets, no new dependencies, no pushing to `main`, flag crypto code for review), and a mandatory procedure for keeping this journal up to date.
+  - Help debugging the first push (a fine-grained token without write permission gave a 403).
+- **Decision:** Accepted. Docs written in English by team choice.
+- **Human verification:** PENDING: human to complete. Check:
+  - that the lists of available and unavailable features in `CLAUDE.md` match slide 4 of the brief;
+  - that the AI rules in `CLAUDE.md` and `CONTRIBUTING.md` match slide 8;
+  - that the team agrees with the workflow rules (branches, one reviewer).
+- **Commit / PR:** `ff645f7` (initial scaffold); CLAUDE.md on branch `docs/claude-md`
+
+### P-004 · 2026-11-19 · Architecture document and two AI design reviews
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5), plus two Claude subagents used as reviewers
+- **Goal:** Write the reference architecture, then have it reviewed from an Apple-platform angle and a security angle before saving it.
+- **Prompt (summary):**
+  - "Summarise the pitch and core technologies and modules we'll use."
+  - "Save it as ARCHITECTURE.md and log it, after running two reviewers, one that fetches and uses iOS dev skills and another for security, with skills as well."
+  - No iOS or security skills are installed. Both reviewers instead checked claims against official sources with web fetches.
+- **Earlier decisions made in this conversation:**
+  - A native Swift Mac agent instead of the suggested Chrome extension: an extension cannot serve `SSH_AUTH_SOCK`, and its Bluetooth access needs an open page and a user click.
+  - Roles follow slide 11 of the brief: project lead, security architect, iOS developer, rotating red team.
+- **Output (summary):**
+  - A first draft of `docs/ARCHITECTURE.md`.
+  - The **iOS reviewer** (sources: Apple developer docs, TN3115, TN3127, Core Bluetooth guide) found:
+    - a `biometryCurrentSet` key cannot auto-approve, and Face ID needs the foreground;
+    - approval needs "notification → foreground → Face ID" and does not fit in a ~10 s background wake;
+    - no relaunch after a force-quit, a Bluetooth toggle or before the first unlock; state restoration is opt-in;
+    - `NSFileProtectionComplete` blocks logging while the phone is locked;
+    - background advertising hides services from the Mac, so scan only at pairing and then reconnect by identifier;
+    - missing pieces: BLE framing, timeouts, Info.plist keys; sign the Mac agent with the Personal Team certificate, not ad hoc;
+    - the proximity lock has no documented macOS API.
+  - The **security reviewer** (sources: OpenSSH PROTOCOL.agent, openssh.org/agent-restrict.html, RFC 5656) found:
+    - **critical:** sign requests carry no host name, so the Mac could fake one and per-host policy was invalid; fix by verifying `session-bind@openssh.com` on the phone and keying policy on host-key fingerprints;
+    - **critical:** zero-touch contradicted Face ID gating (same finding as the iOS reviewer);
+    - "proven nearby" does not stop malware on the Mac;
+    - the pairing fingerprint comparison did not authenticate the phone's key;
+    - the channel had no forward secrecy or key separation;
+    - risk of lockout after losing the phone or re-enrolling Face ID;
+    - the audit log could be truncated, and it recorded host names, which CLAUDE.md forbids;
+    - notification spam (MFA fatigue);
+    - the SSH signature format (mpint encoding) was undocumented.
+  - The **revised ARCHITECTURE.md** addresses these with:
+    - two hardware-enforced key tiers plus a separate channel key;
+    - session-bind verification on the phone, and hosts identified by fingerprint;
+    - a one-time secret in the QR code to authenticate the phone's keys at pairing;
+    - an ephemeral signed ECDH handshake with one key per direction;
+    - a mandatory backup key;
+    - a log head mirrored on the Mac;
+    - BLE lifecycle constraints;
+    - the MVP reduced to the strong key only, with the policy engine moved to J4.
+  - **`CLAUDE.md` updated** so it no longer contradicts the design: key tiers, host-identity rule, file protection classes.
+- **Decision:** Accepted the review findings. Two calls of my own:
+  - The log head is mirrored on the Mac instead of the log being signed with yet another key. The iOS reviewer judged the extra key not worth it; the security reviewer suggested it.
+  - Proximity lock kept as a stretch goal, with its uncertainty listed in the document.
+- **Human verification:** PENDING: human to complete. Check:
+  - the claims the reviewers could not verify: CryptoKit's `signature(for:)` hashes with SHA-256 internally and `rawRepresentation` is r‖s; whether Secure Enclave keys survive an app reinstall; whether the stored BLE identifier survives address rotation; whether a macOS central sees overflow-area service UUIDs;
+  - that `session-bind` verification fits the team's capacity at J4: it means verifying Ed25519, ECDSA and RSA host-key signatures on the phone;
+  - that the team agrees to move the policy engine and the everyday key to J4;
+  - the `CLAUDE.md` changes.
+- **Commit / PR:** branch `docs/architecture`
+
+### P-005 · 2026-11-19 · Face ID for every signature, passkey framing, "why not Touch ID"
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Simplify the design and settle what SentryKey protects.
+- **Prompt (summary):** The team proposed dropping SSH in favour of Mac and iPhone public keys, with the Mac's public key in the Apple Keychain ("so a compromise would only be on Apple's side"). They also proposed dropping zero-touch for "just full Face ID", and described the app as "a passkey that can be used for anything". Follow-up questions covered the Secure Enclave, whether the Keychain is shared between Mac and iPhone, and whether the Mac has its own Secure Enclave. Final decision: "we'll stick to the SSH plan".
+- **Output (summary):**
+  - **Full Face ID:** agreed. It removes the everyday key, the policy engine, the rate-limit tiers and proximity auto-approval.
+  - **The Keychain argument:** the public key is not secret, so storing it in the Keychain only protects it against replacement. The real risk is malware bypassing the check on the Mac, or reading what it unlocks. The protected secret must be unrecoverable without the phone: SSH, or a vault wrapped with ECDH.
+  - **Passkey framing:** a real WebAuthn passkey is impossible on a free account (it needs AutoFill and associated domains; a USB security key needs a restricted entitlement). Suggested instead: a passkey-style authenticator core with SSH as its first integration.
+  - **The Mac has a Secure Enclave** (checked: Apple M5, Touch ID present). So the Mac identity key goes in the Mac's Secure Enclave, and the document now answers "why not just Touch ID?": a trusted separate display, device separation, one key for several Macs.
+  - **Keychain items are not shared between devices.** Secure Enclave keys never sync, and iCloud is unavailable.
+  - `ARCHITECTURE.md` and `CLAUDE.md` updated: single Face ID-gated SSH key, phone and Mac identity keys, backup key, a new residual-risk statement, `complete` file protection for the log, and zero-touch and WebAuthn listed as out of scope.
+- **Decision:** Accepted. SSH kept as the use case. Face ID required for every signature.
+- **Human verification:** PENDING: human to complete. Check:
+  - the claim that a third-party app cannot act as a WebAuthn passkey provider or a virtual USB security key on a free account;
+  - that a Mac Secure Enclave key works for an app signed with a Personal Team certificate;
+  - the new residual-risk statement (approval is bound to the server, not to the local process).
+- **Commit / PR:** branch `docs/architecture`
+
+### P-006 · 2026-11-19 · Export of the session transcript
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Keep the full conversation behind entries P-001 to P-005 in the repo.
+- **Prompt (verbatim):** "push the transcript of this conv in git, in a dedicated folder"
+- **Output (summary):** A script converted the raw session log to `transcripts/2026-11-19-session-1.md`, keeping messages, replies, tool-call notes and the two reviewer reports, and dropping internal reasoning, raw tool output and metadata. The export was scanned for tokens and personal email addresses before committing; none were found. Added `transcripts/README.md`.
+- **Decision:** Accepted.
+- **Human verification:** PENDING: human to complete. Skim the transcript before the repo is shared, and decide whether the course allows it to be public.
+- **Commit / PR:** branch `docs/architecture`
+
+### P-007 · 2026-11-23 · Document SentryKey STRIDE model
+
+- **Author:** <!-- your name -->
+- **Tool / model:** OpenAI Codex (GPT-6)
+- **Goal:** Document the project's J1 STRIDE threat model based on the validated README design.
+- **Prompt (summary or verbatim):** Continue from J1, use README as the subject reference, follow this prompt journal's logging practice, and document SentryKey's STRIDE model.
+- **Output (summary):** Added `docs/THREAT_MODEL.md` with system goals, scope and assumptions, trust boundaries, one analysis for each STRIDE category, planned controls and verification ideas, residual risks, and J1 follow-up points. Linked it from the README milestone table.
+- **Decision:** Accepted as a design draft; implementation claims are explicitly marked as planned or requiring validation.
+- **Human verification:** Pending teammate review against the project brief and protocol decisions; no implementation or device verification was performed.
+- **Commit / PR:** Pending.
+
+### P-008 · 2026-11-23 · Review of the repo against the brief, then Face ID on every signature
 
 - **Author:** Axel Maral
 - **Tool / model:** Claude (Claude Opus 5.5)
