@@ -112,12 +112,13 @@ The Mac scans for the phone only during pairing, with the app in the foreground,
 3. The phone checks it itself, **without trusting anything the Mac says about the host**:
    - the server's signature over the session identifier is valid for that host key;
    - the data to be signed is an SSH login request for that same session, or a git commit signature (SSHSIG) with the `git` namespace. Anything else is denied.
+   - **J3 limits:** only Ed25519 host keys are accepted, forwarded sessions (`is_forwarding`) are refused, and SSHSIG waits for the stretch goal (`LoginApprovalCheck`, `HostKeySignature` in the package).
 4. The phone posts a local notification. It shows the server, identified by its **host-key fingerprint** and the name the phone recorded on first use, and the username.
 5. The user taps it, the app comes to the foreground, Face ID unlocks the key, and the Secure Enclave signs.
 6. The phone returns the signature. The Mac waits about 30–60 seconds, then fails the request with a clear error.
 7. The Mac agent converts the signature to SSH format and returns it to `ssh`.
 
-**Anti-spam:** if prompts exceed a limit per minute, the phone denies new requests for a cooldown period. This stops "MFA fatigue" attacks that flood the user with prompts.
+**Anti-spam:** if prompts exceed a limit per minute, the phone denies new requests for a cooldown period. J3 defaults: 5 prompts per 60 seconds, then a 120-second cooldown (`PromptRateLimiter`, a first guess to tune on the device). This stops "MFA fatigue" attacks that flood the user with prompts.
 
 **Residual risk:** approval is bound to the server, not to the local process that asked. Malware on the Mac could open its own connection to a server you are about to approve and receive the signature. Because each Face ID gives exactly one signature, the attack needs your approval each time and is limited to servers you already use.
 
