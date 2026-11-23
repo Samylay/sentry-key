@@ -213,3 +213,32 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that each diagram matches `ARCHITECTURE.md`, especially the handshake order (the document does not say which side sends first) and the step at which the phone verifies the server;
   - that the diagrams render on GitHub.
 - **Commit / PR:** PR #1 (branch `docs/architecture`)
+
+### P-010 · 2026-11-23 · Adversarial review of the flow diagrams
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5), with a Claude Fable 5.2 subagent as reviewer and editor
+- **Goal:** Have the diagrams from P-009 attacked by a second model, then fix what it finds.
+- **Prompt (verbatim):** "adversarial review and opti it by a fable agent"
+- **Output (summary):** The reviewer checked `docs/FLOWS.md` against `ARCHITECTURE.md` and `CLAUDE.md` and rewrote it. Main fixes:
+  - added the residual risk (approval is bound to the server, not to the local process), which was missing;
+  - a "trusted for / not trusted for" table, because the old boundary label hid that the Mac is trusted at pairing time;
+  - the handshake no longer implies facts the design does not state (who sends first, whether nonces are signed); these are listed as "not specified";
+  - added replay protection, reconnection by stored identifier, and the audit-log head check;
+  - the timeout branch now covers denial, and the error text no longer reuses the "phone unreachable" message;
+  - consistent `[J4]` and `[Stretch]` tags, consistent actor names, and an overview redrawn without crossing edges.
+  The diagrams were rendered again in headless Chrome: all four parse.
+- **Problems the reviewer found in `ARCHITECTURE.md` (not changed, for the team to decide):**
+  - The handshake signature covers only each side's own ephemeral key, so a recorded handshake message can be replayed. A common fix is to sign both ephemeral keys, both nonces and both identities.
+  - Where the host name "recorded on first use" comes from is not stated, nor what the phone shows for an unknown fingerprint.
+  - In J3, how the Mac learns the host name is not stated, since the ssh-agent protocol carries none.
+  - SSHSIG (git commit signing) has no session-bind, so what the phone shows for it is not defined.
+  - The pairing authentication construction and the QR code's validity period are not defined. Anyone who photographs the QR code holds the secret.
+  - Timestamps appear only in the module list, not in the channel flow.
+  - Undefined failure paths: explicit denial vs timeout, Face ID failure, and what happens on a log head mismatch.
+- **Decision:** Accepted the diagram changes. The architecture issues are recorded here for the team.
+- **Human verification:** PENDING: human to complete. Check:
+  - every "not specified" point, and decide which ones ARCHITECTURE.md should settle;
+  - the handshake replay concern before any channel code is written;
+  - that the diagrams render on GitHub.
+- **Commit / PR:** PR #1 (branch `docs/architecture`)
