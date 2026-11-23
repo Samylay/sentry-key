@@ -361,3 +361,21 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
 - **Decision:** Accepted. Supersedes the zero-touch policy layer chosen in P-001.
 - **Human verification:** <!-- e.g. confirm on the iPhone 14 Pro that a biometryCurrentSet key prompts on every signature and that a background request cannot sign -->
 - **Commit / PR:** branch `docs/faceid-every-signature`
+
+### P-014 · 2026-11-23 · Start of J3: SentryKeyProtocol package (SSH formats, agent messages, framing)
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Start the J3 MVP before the team has a Mac and the iPhone available, with the parts that can be built and tested on Linux.
+- **Prompt (verbatim):** "we're skipping teammate reviews so everything and start the J3 even without mac and iphone we'll smooth out the kinks next time"
+- **Process decision:** Samylay decided to merge without teammate review for now. PR #5 and this PR were merged by the author once the secret scan passed. This departs from `CONTRIBUTING.md` (one reviewer per merge), and the team may want to review these changes afterwards.
+- **Output (summary):**
+  - `SentryKeyProtocol/`, a Swift package with no dependencies: a bounds-checked SSH wire reader and writer, `ecdsa-sha2-nistp256` key and signature blobs from CryptoKit's formats, ssh-agent requests and replies, `session-bind@openssh.com`, parsing of the data signed for a login (including `publickey-hostbound-v00`), and length-prefixed framing for the socket and BLE.
+  - 43 tests, run in Apple's official `swift:6.2-noble` Docker image (Swift 6.2.4): all pass, no compiler warnings.
+  - Ground truth: wire formats were checked against RFC 9987 and OpenSSH `PROTOCOL` / `PROTOCOL.agent`. Test vectors come from a real OpenSSH 10.2 login through a stand-in agent, which `sshd` accepted, and a real `ssh-agent` confirmed the reply codes. The procedure is in `SentryKeyProtocol/README.md`. The user name in the vectors was replaced before commit.
+- **Decision:** Accepted. Code that needs CryptoKit (handshake, channel, anti-replay, pairing, recovery code) waits for a Mac.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of every parser (`Wire.swift`, `AgentMessages.swift`, `UserAuthSignedData.swift`, `Framing.swift`), since they handle untrusted input;
+  - that `swift test` passes on a Mac with Xcode;
+  - the limits in `AgentLimits` and the choice to reject boolean values other than 0 and 1.
+- **Commit / PR:** branch `feature/protocol-package`
