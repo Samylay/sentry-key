@@ -45,7 +45,9 @@ Master 2 group project: *"Make the iPhone a security device"*.
 
 | Path | Contents |
 |---|---|
-| `SentryKeyProtocol/` | Shared Swift package: SSH wire formats, ssh-agent messages, framing. See its README |
+| `SentryKeyProtocol/` | Shared Swift package: SSH wire formats, ssh-agent messages, framing, approval checks. See its README |
+| `SentryKey-iOS/` | iPhone app sources (SwiftUI). Its README explains how to create the Xcode project |
+| `docs/UI_RESEARCH.md` | Real-app screens studied before designing the iPhone UI |
 | `docs/PROMPT_JOURNAL.md` | Mandatory log of every AI prompt used on the project |
 | `docs/red-team/README.md` | Red team guide: attacker model, BLE primer, attack decision trees |
 | `CONTRIBUTING.md` | Team rules: reviews, AI usage, commits |

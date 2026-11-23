@@ -379,3 +379,24 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that `swift test` passes on a Mac with Xcode;
   - the limits in `AgentLimits` and the choice to reject boolean values other than 0 and 1.
 - **Commit / PR:** branch `feature/protocol-package`
+
+### P-015 · 2026-11-23 · J3: approval checks and the iPhone app screens
+
+- **Author:** Samylay
+- **Tool / model:** Claude Code (Claude Opus 5.5), with the Appllama MCP for UI research
+- **Goal:** Continue J3 without a Mac: the checks the phone runs before prompting, and the SwiftUI screens.
+- **Prompt (verbatim):** "merge them, keep going on J3, usee apple ui kit and appllama"
+- **Process decision:** PRs #6 and #7 were merged by Samylay's instruction, without teammate review (see P-014).
+- **Output (summary):**
+  - Package, `Approval/`: `LoginApprovalCheck` (the login must match the session-bind: same key, same session, same host key; refuses non-logins, a missing or forwarded session-bind, and user names with invisible or bidi characters), `HostKeySignature` (Ed25519 only), `SSHFingerprint` and `OpenSSHPublicKey` (checked against `ssh-keygen` output), `KnownHosts`, `PromptRateLimiter`. 70 tests pass in `swift:6.2-noble`.
+  - Ground truth for the server check: Python's Ed25519 verified that, in the captured OpenSSH 10.2 login, the server signs the session ID itself, and rejected a tampered ID.
+  - `SentryKey-iOS/`: SwiftUI app with Welcome, Pairing (VisionKit QR scanner), the approval sheet, Home (public key, recent requests) and Settings (named servers, a Debug demo request). `KeyStore` (Secure Enclave key via CryptoKit, Face ID through `LAContext.evaluateAccessControl`) and `HostVerifier` (CryptoKit Ed25519).
+  - "Apple UI kit" was read as Apple's native SwiftUI controls and HIG. Layouts were studied on Appllama first (Xverse, Dashlane, X, Zengo, Keeper); see `docs/UI_RESEARCH.md`.
+- **Review:** a separate Claude (Opus 5.5) pass reviewed the app code without the author's reasoning. It found no certain compile errors and 7 runtime issues, all fixed: a crash when a request expires during Face ID, a new key created silently after a backup restore, the approval sheet visible in the app switcher, the Face ID passcode fallback, system interruptions treated as denials, state wiped when read while locked, and the scanner starting too early.
+- **Decision:** Accepted as a first draft. The app sources only pass `swiftc -parse` (and `AppModel`/`Storage` type-check with stand-ins for Apple-only types): no iOS SDK build and no device run were possible. No `.xcodeproj` is committed, because one written without Xcode could not be checked; `SentryKey-iOS/README.md` gives the steps. Pairing accepts any QR code until the payload format is specified, and this must not ship.
+- **Human verification:** PENDING: human to complete. Check:
+  - build in Xcode and fix compile errors;
+  - line-by-line review of `KeyStore.swift`, `HostVerifier.swift`, `LoginApproval.swift`, `HostKeySignature.swift`, `DisplayText.swift`;
+  - on the iPhone 14 Pro: the demo request shows exactly one Face ID prompt per signature, and enrolling a new face makes the key unusable;
+  - the rate-limit defaults (5 per minute, 2-minute cooldown) and the 30-second answer time.
+- **Commit / PR:** branch `feature/ios-app-ui`
