@@ -35,8 +35,9 @@ struct LogEntry: Identifiable {
 
 /// The app's state and the decisions the user makes.
 ///
-/// TODO(J3): the BLE channel calls `receive(_:)` and sets `sendResponse`.
-/// Until then, `showDemoRequest()` builds a request on the phone itself.
+/// `PhoneLinkController` calls `receive(_:)` with what a paired Mac sent
+/// through the secure channel, and sets `sendResponse`. In Debug builds,
+/// `DemoRequest` builds a request on the phone itself.
 /// TODO(J4): the signature history becomes the hash-chained audit log.
 @MainActor
 @Observable
@@ -66,8 +67,12 @@ final class AppModel {
     var pending: PendingRequest?
     var errorMessage: String?
 
-    /// Where answers to the Mac go. Set by the BLE channel.
+    /// Where answers to the Mac go. Set by `PhoneLinkController`.
     var sendResponse: (PhoneResponse) -> Void = { _ in }
+    /// Turns Bluetooth on. Set by `PhoneLinkController`.
+    var startBluetooth: () -> Void = {}
+    /// Sends the pairing request to the Mac. Set by `PhoneLinkController`.
+    var sendPairingRequest: (PairingRequest) -> Void = { _ in }
 
     /// True while the app is on screen. Set by the app's scene. A request
     /// that arrives otherwise is announced by a notification.
@@ -80,7 +85,7 @@ final class AppModel {
     private let identityKeyStore = IdentityKeyStore()
     private var pairing: PhonePairing?
     /// Identity public keys of the Macs this phone is paired with.
-    private var pairedMacKeys: [[UInt8]] = []
+    private(set) var pairedMacKeys: [[UInt8]] = []
     private let notifier = ApprovalNotifier()
     private let storage = Storage()
     private var ourKeyBlob: [UInt8]?
@@ -124,8 +129,8 @@ final class AppModel {
     /// two keys and prepares the message that gives the Mac their public
     /// halves. The phone is paired only once the Mac has confirmed.
     ///
-    /// TODO(J3): the BLE transport sends `pairingRequest` and passes the
-    /// Mac's answer to `receivePairingConfirmation`.
+    /// `PhoneLinkController` sends `pairingRequest` over Bluetooth and
+    /// passes the Mac's answer to `receivePairingConfirmation`.
     func pair(qrPayload: String) throws {
         var scanned: PhonePairing
         do {
@@ -142,6 +147,8 @@ final class AppModel {
         pairing = scanned
         loadKey()
         pairingStage = .waitingForMac
+        startBluetooth()
+        if let pairingRequest { sendPairingRequest(pairingRequest) }
     }
 
     /// The Mac's answer to `pairingRequest`.
@@ -169,12 +176,6 @@ final class AppModel {
         pairing = nil
         pairingRequest = nil
         pairingStage = .notStarted
-    }
-
-    /// The identity key of the paired Mac with this fingerprint, for the
-    /// secure channel's handshake.
-    func pairedMacKey(fingerprint: [UInt8]) -> [UInt8]? {
-        pairedMacKeys.first { IdentityFingerprint.of(publicKey: $0) == fingerprint }
     }
 
     #if DEBUG

@@ -11,6 +11,7 @@ The Swift package shared by the iPhone app and the Mac agent. It has no dependen
 | `Framing/` | Length-prefixed framing for the agent socket, and splitting into chunks for BLE. |
 | `Link/` | The messages the Mac agent and the phone exchange inside the secure channel: a sign request with its session-bind, a cancellation, and the phone's answer. Each carries a request identifier, so a late answer is never taken for the answer to the next request. |
 | `Channel/` | The secure channel between the Mac and the phone: the two handshake messages, then AES-GCM messages with one key and one counter per direction. See below. |
+| `Transport/` | What travels over Bluetooth before any encryption: the service's identifiers, and a kind byte that keeps pairing messages and channel messages apart. |
 | `Pairing/` | Pairing by QR code: the offer the Mac shows, the phone's request and the Mac's confirmation. See below. |
 | `Approval/` | What the phone checks before it prompts: the login matches session-bind, the user name is safe to show, Ed25519 host key signature parts, fingerprints, server names recorded on first use, and the prompt rate limit. |
 

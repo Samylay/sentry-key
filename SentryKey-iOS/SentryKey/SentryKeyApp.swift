@@ -2,8 +2,17 @@ import SwiftUI
 
 @main
 struct SentryKeyApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
+    /// Created at launch, not by a view: iOS can relaunch the app in the
+    /// background for a Bluetooth event, when no view exists yet.
+    private let link: PhoneLinkController
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        let model = AppModel()
+        _model = State(initialValue: model)
+        link = PhoneLinkController(model: model)
+    }
 
     var body: some Scene {
         WindowGroup {

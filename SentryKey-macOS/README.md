@@ -9,6 +9,8 @@ The Mac side of SentryKey: what `ssh` talks to. A Swift package with no third-pa
 | Target | Contents |
 |---|---|
 | `SentryKeyAgent` | The agent's logic, as a library. |
+| `SentryKeyBluetooth` | The Mac as a Bluetooth central: `BluetoothPhoneConnector` (connections to the paired phone), `BluetoothPairing`, and the pairing code drawn in a terminal. **Never run**: see below. |
+| `sentrykey-agent` | The real agent as a command-line tool: `pair`, then `run`. It links no development target. **Never run against an iPhone.** |
 | `SentryKeyAgentDevSupport` | `SoftwarePhone`, a stand-in phone with a software key, `SoftwareIdentity`, and `LoopbackPhoneConnector`, an in-memory connection in place of Bluetooth. Development and tests only. |
 | `sentrykey-agent-dev` | A command-line agent wired to the stand-in phone, to try the agent with a real `ssh`. |
 
@@ -24,7 +26,7 @@ Inside `SentryKeyAgent`:
 | `P256SignatureVerifier` | Checks the phone's signature with CryptoKit before `ssh` sees it. |
 | `PairingStore` | The agent's private folder on disk, the record of the paired phone (public keys only), and `MacIdentityKey`, the Mac identity key in the Mac's Secure Enclave. |
 
-The menu bar app, the Bluetooth central and the Mac identity key are not here yet. They need an app bundle (for the Bluetooth permission) and will use this library: the Bluetooth central is one more `PhoneConnector`, and everything above it stays as it is.
+The menu bar app is not here yet. Until it is, `sentrykey-agent` is a command-line tool, with the text macOS requires before granting Bluetooth embedded in the binary.
 
 ## What the agent decides, and what it does not
 
@@ -42,7 +44,7 @@ When the phone refuses, does not answer or cannot be reached, `ssh` gets a failu
 swift test
 ```
 
-53 tests, none of which sleeps: timeouts are injected and fired by hand.
+57 tests, none of which sleeps: timeouts are injected and fired by hand.
 
 ## Try it with a real ssh
 
@@ -64,6 +66,19 @@ ssh -o IdentityAgent=/tmp/sentrykey-dev/agent.sock user@server
 
 **The stand-in phone is not the product.** Its key is an ordinary key in the agent's memory, created at each start and never written to disk. It exists so the agent can be developed before the Bluetooth link does. It lives in its own target, which the real agent must never link.
 
+## With a real iPhone
+
+```bash
+swift run sentrykey-agent pair    # shows a QR code: scan it in the iPhone app
+swift run sentrykey-agent run     # then point ssh at the socket it prints
+```
+
+**None of this has been run.** The Bluetooth code on both devices was written from Apple's documentation and checked by the compiler only: there was no Mac that could be used with the iPhone. Expect to fix things the first time. Known unknowns:
+
+- whether macOS grants Bluetooth to a command-line tool from the usage text embedded in its binary, or only to the terminal it runs in;
+- whether the Mac's stored identifier still reaches the phone after the phone's Bluetooth address rotates (an open question in the architecture);
+- during pairing the Mac connects to the first device that advertises the SentryKey service. Another device advertising it nearby makes the pairing fail until the code expires. It cannot make a wrong phone pair.
+
 ## Security review
 
 Needs line-by-line human review, as CLAUDE.md requires:
@@ -72,5 +87,6 @@ Needs line-by-line human review, as CLAUDE.md requires:
 - `AgentSession.swift`: which messages reach the phone, and the forwarding rule.
 - `SigningQueue.swift`: matching answers to requests, and the timeout.
 - `SecurePhoneLink.swift`: when a connection is opened, reused and dropped, and that sends stay in order.
+- `BluetoothLink.swift` and `BluetoothPhone.swift`: everything received is untrusted, and pairing ignores any request that fails the check.
 - `PairingStore.swift`: file permissions, and what the Mac identity key file does and does not protect.
 - `P256SignatureVerifier.swift` and `ECDSAP256.rawSignature(fromSignatureBlob:)` in `SentryKeyProtocol`: crypto and parsing.

@@ -57,6 +57,9 @@ public struct PairingStore: PublicKeyStore {
     private struct Record: Codable {
         let identityKey: Data
         let sshKeyBlob: Data
+        /// Which Bluetooth device to call. Nil for a phone recorded
+        /// without Bluetooth, as in tests.
+        let bluetoothIdentifier: UUID?
     }
 
     private static let fileName = "paired-phone.json"
@@ -66,14 +69,27 @@ public struct PairingStore: PublicKeyStore {
         self.folder = folder
     }
 
-    public func save(_ phone: PairedPhone) throws {
-        let record = Record(identityKey: Data(phone.identityKey), sshKeyBlob: Data(phone.sshKeyBlob))
+    public func save(_ phone: PairedPhone, bluetoothIdentifier: UUID? = nil) throws {
+        let record = Record(
+            identityKey: Data(phone.identityKey), sshKeyBlob: Data(phone.sshKeyBlob),
+            bluetoothIdentifier: bluetoothIdentifier
+        )
         try folder.write(try JSONEncoder().encode(record), to: Self.fileName)
     }
 
     /// The paired phone, or nil when there is none or the file is not a
     /// well-formed record.
     public func load() -> PairedPhone? {
+        loadRecord().map { PairedPhone(identityKey: Array($0.identityKey), sshKeyBlob: Array($0.sshKeyBlob)) }
+    }
+
+    /// The paired phone's Bluetooth identifier. It only says which device
+    /// to call: the handshake is what proves it is the phone.
+    public func bluetoothIdentifier() -> UUID? {
+        loadRecord()?.bluetoothIdentifier
+    }
+
+    private func loadRecord() -> Record? {
         guard let data = folder.read(Self.fileName),
               let record = try? JSONDecoder().decode(Record.self, from: data),
               record.identityKey.count == ChannelLimits.publicKeyLength,
@@ -81,7 +97,7 @@ public struct PairingStore: PublicKeyStore {
         else {
             return nil
         }
-        return PairedPhone(identityKey: Array(record.identityKey), sshKeyBlob: Array(record.sshKeyBlob))
+        return record
     }
 
     public func forget() {
