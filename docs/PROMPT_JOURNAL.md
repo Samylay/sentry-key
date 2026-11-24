@@ -473,3 +473,17 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that both packages compile with the runner's Xcode 26.6;
   - whether the team wants the job to be a required check in the branch protection of `main`.
 - **Commit / PR:** pull request #11
+
+### P-020 · 2026-11-24 · List of what must change before shipping
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Have one place that lists everything standing between the current code and a version that could be shipped.
+- **Prompt (verbatim):** "ecrit dans un fichier tout ce qu'il faudra changer pour envoyer en prod"
+- **Output (summary):** `docs/PRODUCTION_CHECKLIST.md`, in eight sections: parts that do not exist yet, temporary code that must not ship (pairing that accepts any QR code, the stand-in phone, placeholders), limits chosen without measurement, limits of what is supported, what was never run on a device, reviews and verifications still owed, continuous integration gaps, and distribution. Items come from a search of the code for temporary markers, from the READMEs, the architecture document and the journal.
+- **Decision:** Accepted. "Production" was read as more than the J5 demo, so the last section covers distribution, which the free Apple developer account does not allow. Items are tagged J3, J4 or product.
+- **Human verification:** PENDING: human to complete. Check:
+  - the file and line references, which will drift as the code changes;
+  - that nothing temporary is missing from section 2: the list comes from comments and READMEs, so undocumented shortcuts are not in it;
+  - the distribution section: the statements about the paid developer program and notarization were written from the assistant's knowledge, not checked against Apple's current documentation.
+- **Commit / PR:** pull request #11
