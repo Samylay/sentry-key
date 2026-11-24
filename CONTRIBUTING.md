@@ -44,7 +44,7 @@ Check every AI-generated change for these:
 
 If a scan fails, do not just delete the secret in a new commit: it stays in the history. Rotate the secret, record it in the prompt journal if it went through an AI tool, and tell the team.
 
-If the finding is a false positive, add its fingerprint to a `.gitleaksignore` file and say why in the pull request.
+If the finding is a false positive, add its fingerprint to a `.gitleaksignore` file and say why in the pull request. One kind is already handled in `.gitleaks.toml`: the CryptoKit type names `P256.Signing.PrivateKey` and `P256.KeyAgreement.PrivateKey`, which the scanner takes for secrets when they follow a property whose name contains "key". Keep that exception to exact type names.
 
 ## Tests in CI
 
