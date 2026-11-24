@@ -49,6 +49,7 @@ Master 2 group project: *"Make the iPhone a security device"*.
 | `SentryKey-iOS/` | iPhone app (SwiftUI) and its Xcode project. See its README |
 | `SentryKey-macOS/` | Mac agent: the ssh-agent socket and the queue of sign requests, with a stand-in phone for development. See its README |
 | `docs/UI_RESEARCH.md` | Real-app screens studied before designing the iPhone UI |
+| `docs/BLE_WAKE_TEST.md` | The device test for the riskiest open question: does the Mac wake the backgrounded app over Bluetooth? Not run yet |
 | `docs/PRODUCTION_CHECKLIST.md` | Everything that must change before SentryKey could ship: missing parts, temporary code, unmeasured limits, reviews owed |
 | `docs/PROMPT_JOURNAL.md` | Mandatory log of every AI prompt used on the project |
 | `docs/red-team/README.md` | Red team guide: attacker model, BLE primer, attack decision trees |

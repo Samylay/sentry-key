@@ -597,3 +597,19 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - the CoreBluetooth calls against Apple's documentation, in particular state restoration (`willRestoreState`), the single answer to a batch of writes, and writes with response being acknowledged in order;
   - that `SentryKeyApp.init` runs when iOS relaunches the app in the background, which the transport relies on.
 - **Commit / PR:** branch `feature/bluetooth-transport`, stacked on pull request #15
+
+### P-026 · 2026-11-24 · Tools and procedure for the Bluetooth wake-up test (work package C)
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Be able to answer the architecture's first open question on a real iPhone: can the Mac wake the backgrounded app over Bluetooth, and does the app get far enough to notify the user?
+- **Prompt (verbatim):** the same request as P-023 ("tu peux faire 4 PR pour ca? prototype de réveil Bluetooth (lot C), ..."). This entry covers C.
+- **Output (summary):**
+  - `docs/BLE_WAKE_TEST.md`: the procedure. A first run of the whole chain, then thirteen phone states to probe (background, locked, restarted, force-quit, Bluetooth toggled, Low Power Mode, out of range), then real logins to check the notification, with tables to fill in and how to read the results.
+  - Mac: `sentrykey-agent probe`. Each probe is a sign request the phone refuses at once without showing anything, so an answer proves the app woke up, ran the handshake and read the request. It prints the time each took.
+  - iPhone: `Bluetooth/WakeLog.swift` records each Bluetooth event with the state the app was in, and a Debug screen in Settings shows them.
+- **Decision:** Modified. The plan called this package a throwaway prototype, to run before the transport was written. The author asked for all four packages at once, so the transport (P-025) was written first and this package became the instruments and the procedure to test it, not a separate prototype. **The question itself is not answered:** nothing here was run, and the tables are empty.
+- **Human verification:** PENDING: human to complete. Run `docs/BLE_WAKE_TEST.md` on the iPhone 14 Pro, fill in its tables, and record the result in `docs/ARCHITECTURE.md`. Also check:
+  - that the probe's reasoning holds on the device: a request with one byte of data is refused before any prompt and before the rate limit;
+  - whether the event recording should stay in release builds. It writes event names and times to a file readable while the phone is locked.
+- **Commit / PR:** branch `feature/bluetooth-wake-test`, stacked on pull request #16

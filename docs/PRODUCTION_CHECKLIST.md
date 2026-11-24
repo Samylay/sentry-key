@@ -15,12 +15,13 @@ No iPhone has ever signed an SSH login. These are missing, not unfinished.
 | Hash-chained audit log, head mirrored on the Mac | `AppModel.swift:38`: the history is an in-memory array, lost when the app closes | J4 |
 | Recovery key, recovery code and key registry | `docs/ARCHITECTURE.md`, Recovery | J4 |
 
-The riskiest open question is still open: whether the Mac can reliably wake the backgrounded iPhone app over Bluetooth. If it cannot, the design changes.
+The riskiest open question is still open: whether the Mac can reliably wake the backgrounded iPhone app over Bluetooth. If it cannot, the design changes. `docs/BLE_WAKE_TEST.md` is the procedure to answer it, and it has not been run.
 
 ## 2. Temporary code that must not ship
 
 | Item | File | What to do |
 |---|---|---|
+| **Bluetooth test log** | `SentryKey-iOS/SentryKey/Bluetooth/WakeLog.swift` | Event names and times, written to a file readable while the phone is locked. The screen is Debug only, but the recording is not: remove it, or decide to keep it, before shipping. |
 | **Debug pairing without a Mac** | `AppModel.pairForDemo`, `Views/PairingView.swift` | Inside `#if DEBUG`. Confirm on a Release build that the button is gone. |
 | **Stand-in phone with a software key on the Mac** | `SentryKey-macOS/Sources/SentryKeyAgentDevSupport/`, `Sources/sentrykey-agent-dev/` | Never link from a shipping target. Before a release, check the dependency list of every product. Consider moving both targets out of the shipped package. |
 | **Demo request** | `SentryKey-iOS/SentryKey/DemoRequest.swift`, `Views/SettingsView.swift:33` | Already inside `#if DEBUG`. Confirm on a Release build that the entry is gone. |

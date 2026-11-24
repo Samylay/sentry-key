@@ -46,8 +46,49 @@ struct SettingsView: View {
             } footer: {
                 Text("Builds a sign-in request on this iPhone, signed by a throwaway server key, and runs the real checks, Face ID and signature. Nothing leaves the phone. With the delay, leave the app or lock the phone before the request arrives to see its notification.")
             }
+
+            Section {
+                NavigationLink("Bluetooth test log") {
+                    WakeLogView()
+                }
+            } footer: {
+                Text("What the app did each time the Mac reached it, and whether it was on screen. See docs/BLE_WAKE_TEST.md.")
+            }
             #endif
         }
         .navigationTitle("Settings")
     }
 }
+
+#if DEBUG
+/// The Bluetooth events recorded by `WakeLog`, newest first.
+struct WakeLogView: View {
+    private let log = WakeLog.shared
+
+    var body: some View {
+        List(log.entries.reversed()) { entry in
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(entry.event)
+                    Text(entry.date.formatted(date: .omitted, time: .standard))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(entry.appState)
+                    .font(.caption)
+                    .foregroundStyle(entry.appState == "background" ? .orange : .secondary)
+            }
+        }
+        .overlay {
+            if log.entries.isEmpty {
+                ContentUnavailableView("No events yet", systemImage: "antenna.radiowaves.left.and.right")
+            }
+        }
+        .navigationTitle("Bluetooth test log")
+        .toolbar {
+            Button("Clear") { log.clear() }
+        }
+    }
+}
+#endif

@@ -71,7 +71,10 @@ ssh -o IdentityAgent=/tmp/sentrykey-dev/agent.sock user@server
 ```bash
 swift run sentrykey-agent pair    # shows a QR code: scan it in the iPhone app
 swift run sentrykey-agent run     # then point ssh at the socket it prints
+swift run sentrykey-agent probe   # measures whether, and how fast, the iPhone answers
 ```
+
+`probe` is the tool for `docs/BLE_WAKE_TEST.md`, the procedure that checks whether the Mac can reach the phone when its app is in the background or the phone is locked.
 
 **None of this has been run.** The Bluetooth code on both devices was written from Apple's documentation and checked by the compiler only: there was no Mac that could be used with the iPhone. Expect to fix things the first time. Known unknowns:
 
