@@ -46,6 +46,12 @@ If a scan fails, do not just delete the secret in a new commit: it stays in the 
 
 If the finding is a false positive, add its fingerprint to a `.gitleaksignore` file and say why in the pull request.
 
+## Tests in CI
+
+The `swift-test` workflow runs `swift test` in `SentryKeyProtocol/` and `SentryKey-macOS/` on a macOS runner, on every pull request and on `main`. A pull request with a failing test is not merged.
+
+It does not replace running the tests yourself before pushing, and it covers neither the iPhone app nor anything that needs a device: Bluetooth, the Secure Enclave and Face ID are checked by hand on the iPhone.
+
 ## Commits
 
 - Use short, imperative messages: `Add QR pairing screen`, `Fix nonce reuse in channel`.

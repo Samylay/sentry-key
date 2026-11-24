@@ -459,3 +459,17 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that no shipping target ever depends on `SentryKeyAgentDevSupport`;
   - the limits chosen without measurement: 45-second timeout, 16 connections, 8 waiting requests, 5-minute idle time.
 - **Commit / PR:** branch `feature/mac-agent`, stacked on `feature/phone-link-messages` and on pull request #9
+
+### P-019 · 2026-11-24 · CI job running the Swift tests
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Have the unit tests run on every pull request, not only on the author's Mac.
+- **Prompt (verbatim):** "ajoute un job swift test dans la ci, et explique moi tout ce que tu as fait"
+- **Output (summary):** `.github/workflows/swift-test.yml`: one job per package (`SentryKeyProtocol`, `SentryKey-macOS`) running `swift test` on the `macos-26` runner, on pull requests and on `main`. The token is read-only, the checkout action is pinned to the same commit as in the Gitleaks workflow, and a package missing from a branch is skipped with a notice. A "Tests in CI" section was added to `CONTRIBUTING.md`.
+- **Decision:** Accepted. The runner is pinned to `macos-26` rather than `macos-latest`. Its default Xcode is 26.6, older than the Xcode 27.2 the code was written and tested with, so a compiler difference is possible. The script that logs in to a local `sshd` and the iPhone app build were left out of CI: neither was asked for, and the first has never run on a hosted runner.
+- **Human verification:** PENDING: human to complete. Check:
+  - the first run of the workflow on GitHub: it was validated as YAML only, and has never run;
+  - that both packages compile with the runner's Xcode 26.6;
+  - whether the team wants the job to be a required check in the branch protection of `main`.
+- **Commit / PR:** pull request #11
