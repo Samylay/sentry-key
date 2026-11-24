@@ -435,3 +435,27 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that the team agrees on the message set before the Bluetooth and channel work builds on it, in particular the `cancel` message and the list of refusal reasons;
   - the plan itself with Samylay and Axel.
 - **Commit / PR:** branch `feature/phone-link-messages`, stacked on pull request #9
+
+### P-018 · 2026-11-24 · Mac agent: ssh-agent socket, request queue and a stand-in phone
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Build work package A of the J3 plan (P-017): the Mac agent, testable on a Mac alone, without an iPhone.
+- **Prompt (summary):** Approval of the plan from P-017, in which the author took the Mac agent and stated that device tests would happen on another Mac. No further prompt: the assistant implemented the package from the plan.
+- **Output (summary):**
+  - `SentryKey-macOS/`, a Swift package with no third-party dependency. Library `SentryKeyAgent`: `AgentSocket` (Unix socket in a `0700` folder, socket `0600`, peers of another user refused, at most 16 connections, never deletes a path that is not a dead socket), `AgentSession` (lists the phone's key, keeps the session-bind, refuses key management and forwarded connections without asking the phone), `SigningQueue` (one request at a time, answers matched by `RequestID`, 45-second timeout followed by a `cancel`, at most 8 waiting), `P256SignatureVerifier` (the phone's signature is checked before `ssh` gets it).
+  - `SentryKeyAgentDevSupport` and `sentrykey-agent-dev`: a stand-in phone with a software P-256 key held in memory, which runs `LoginApprovalCheck` and the Ed25519 session-bind check like the real phone. Separate targets, so the real agent cannot link a key that lives on the Mac.
+  - `SentryKeyProtocol`: `ECDSAP256.rawSignature(fromSignatureBlob:)`, the inverse of `signatureBlob`, strict on mpint form.
+  - Tests: 35 in the agent package (queue, session, real socket), 3 more in the protocol package (88 in total). No test sleeps.
+  - `Scripts/try-with-local-ssh.sh`: a real OpenSSH 10.5 client logs in to a throwaway `sshd` on 127.0.0.1 through the agent. Run on 2026-11-24: accepted with the approving phone; refused with a phone that denies, signs with another key, is unreachable, or never answers.
+- **Decision:** Accepted as a first version, with these choices by the assistant, to confirm:
+  - one thread per connection with blocking socket calls, bridged to async code with a semaphore, rather than Network.framework or dispatch sources;
+  - a connection that carries a forwarding session-bind, or more than one session-bind, can no longer sign (agent forwarding is unsupported);
+  - a sign request without session-bind is still sent to the phone, which refuses it: the phone stays the only place that decides.
+  One bug was found by the script, not by the unit tests: the public key line stayed in the `print` buffer when standard output was a file. Fixed.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of `AgentSocket.swift`, `AgentSession.swift`, `SigningQueue.swift`, `P256SignatureVerifier.swift`, `SoftwarePhone.swift` and the new function in `ECDSAP256.swift`;
+  - rerun `swift test` in both packages and `Scripts/try-with-local-ssh.sh --with-timeout`;
+  - that no shipping target ever depends on `SentryKeyAgentDevSupport`;
+  - the limits chosen without measurement: 45-second timeout, 16 connections, 8 waiting requests, 5-minute idle time.
+- **Commit / PR:** branch `feature/mac-agent`, stacked on `feature/phone-link-messages` and on pull request #9

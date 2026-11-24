@@ -6,7 +6,7 @@ The Swift package shared by the iPhone app and the Mac agent. It has no dependen
 
 | Folder | Contents |
 |---|---|
-| `SSHWire/` | Bounds-checked reader and writer for SSH wire types (RFC 4251). `ecdsa-sha2-nistp256` public key and signature blobs (RFC 5656), from CryptoKit's formats. |
+| `SSHWire/` | Bounds-checked reader and writer for SSH wire types (RFC 4251). `ecdsa-sha2-nistp256` public key and signature blobs (RFC 5656), to and from CryptoKit's formats. |
 | `Agent/` | ssh-agent requests and replies (RFC 9987), the `session-bind@openssh.com` extension, and the data `ssh` signs for a login, including OpenSSH's `publickey-hostbound-v00` variant. |
 | `Framing/` | Length-prefixed framing for the agent socket, and splitting into chunks for BLE. |
 | `Link/` | The messages the Mac agent and the phone exchange inside the secure channel: a sign request with its session-bind, a cancellation, and the phone's answer. Each carries a request identifier, so a late answer is never taken for the answer to the next request. |

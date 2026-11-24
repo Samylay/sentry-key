@@ -59,4 +59,53 @@ struct ECDSAP256Tests {
     @Test func wrongSignatureLengthIsRejected() {
         #expect(throws: WireError.self) { try ECDSAP256.signatureBlob(rawSignature: [UInt8](repeating: 1, count: 63)) }
     }
+
+    @Test func rawSignatureMatchesWhatSSHDVerified() throws {
+        let blob = try ECDSAP256.signatureBlob(rawSignature: CapturedVectors.signatureR + CapturedVectors.signatureS)
+        #expect(try ECDSAP256.rawSignature(fromSignatureBlob: blob) == CapturedVectors.signatureR + CapturedVectors.signatureS)
+    }
+
+    @Test func rawSignatureRestoresLeadingZeros() throws {
+        // r starts with zero bytes and s has its top bit set: the blob drops
+        // the first and pads the second, and decoding must undo both.
+        let r = [UInt8](repeating: 0, count: 3) + [UInt8](repeating: 0x11, count: 29)
+        let s = [UInt8](repeating: 0xFF, count: 32)
+        let blob = try ECDSAP256.signatureBlob(rawSignature: r + s)
+        #expect(try ECDSAP256.rawSignature(fromSignatureBlob: blob) == r + s)
+    }
+
+    @Test func malformedSignatureBlobsAreRejected() throws {
+        func blob(algorithm: String = ECDSAP256.algorithm, r: [UInt8], s: [UInt8], extra: [UInt8] = []) -> [UInt8] {
+            var inner = WireWriter()
+            inner.writeString(r)
+            inner.writeString(s)
+            var writer = WireWriter()
+            writer.writeString(algorithm)
+            writer.writeString(inner.bytes + extra)
+            return writer.bytes
+        }
+        let one: [UInt8] = [1]
+
+        #expect(throws: WireError.unexpectedValue("signature algorithm")) {
+            try ECDSAP256.rawSignature(fromSignatureBlob: blob(algorithm: "ssh-ed25519", r: one, s: one))
+        }
+        #expect(throws: WireError.unexpectedValue("zero signature value")) {
+            try ECDSAP256.rawSignature(fromSignatureBlob: blob(r: [], s: one))
+        }
+        #expect(throws: WireError.unexpectedValue("negative signature value")) {
+            try ECDSAP256.rawSignature(fromSignatureBlob: blob(r: [0x80], s: one))
+        }
+        #expect(throws: WireError.unexpectedValue("signature value not in shortest form")) {
+            try ECDSAP256.rawSignature(fromSignatureBlob: blob(r: [0, 1], s: one))
+        }
+        #expect(throws: WireError.unexpectedValue("signature value too long")) {
+            try ECDSAP256.rawSignature(fromSignatureBlob: blob(r: [UInt8](repeating: 1, count: 33), s: one))
+        }
+        #expect(throws: WireError.trailingBytes(1)) {
+            try ECDSAP256.rawSignature(fromSignatureBlob: blob(r: one, s: one, extra: [0]))
+        }
+        #expect(throws: WireError.trailingBytes(1)) {
+            try ECDSAP256.rawSignature(fromSignatureBlob: blob(r: one, s: one) + [0])
+        }
+    }
 }
