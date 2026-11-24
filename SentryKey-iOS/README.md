@@ -2,7 +2,7 @@
 
 The iPhone side of SentryKey, in SwiftUI with Apple's own controls (Form, List, ShareLink, VisionKit's QR scanner). Screen layouts were studied on real apps first: see [docs/UI_RESEARCH.md](../docs/UI_RESEARCH.md).
 
-**Status:** written without a Mac. Every file passes `swiftc -parse` on Linux, but nothing here has been compiled with the iOS SDK or run on a device. Expect a few compile fixes on first build.
+**Status:** builds with Xcode 27.2 for iOS (Debug and Release) with no errors or warnings in our code, and launches in the simulator up to the pairing screen. It has not been run on a device yet, so nothing past pairing (Secure Enclave key, Face ID, the demo request) has been exercised.
 
 ## What works today (once built)
 
@@ -18,21 +18,26 @@ The iPhone side of SentryKey, in SwiftUI with Apple's own controls (Form, List, 
 - **Local notification** when a request arrives in the background (ApprovalFlow).
 - **Audit log** with a hash chain (the history is in memory only).
 
-## Create the Xcode project (once, on a Mac)
+## Open and build
 
-The repository holds the sources, not an `.xcodeproj`, because a project file written without Xcode could not be checked. Xcode 16 or later:
+Open `SentryKey-iOS/SentryKey.xcodeproj` in Xcode 16 or later. The project is committed, so there is nothing to create.
 
-1. File › New › Project › iOS › App. Product Name `SentryKey`, Interface SwiftUI, Language Swift, Storage None. Save it in a **temporary** folder, not in the repository.
-2. In Finder, move `SentryKey.xcodeproj` and `SentryKey/Assets.xcassets` from that temporary folder into this folder (`SentryKey-iOS/` and `SentryKey-iOS/SentryKey/`). Delete the rest of the temporary folder.
-3. Open `SentryKey-iOS/SentryKey.xcodeproj`. The `SentryKey` group now shows this repository's files.
-4. File › Add Package Dependencies › Add Local… › choose `SentryKeyProtocol/`, and add the `SentryKeyProtocol` library to the SentryKey target.
-5. Target › General: Minimum Deployments iOS 17.0.
-6. Target › Signing & Capabilities: your Personal Team, and a bundle identifier of your own.
-7. Target › Info, add:
-   - `Privacy - Camera Usage Description`: "SentryKey scans the pairing code shown by your Mac."
-   - `Privacy - Face ID Usage Description`: "SentryKey asks for Face ID before each signature."
-8. Build on the iPhone 14 Pro (the simulator has no Secure Enclave, so pairing fails there).
-9. Commit the `.xcodeproj` (not `xcuserdata/`) so nobody repeats these steps.
+- The `SentryKey` folder is a synchronized group: a file added to the folder is part of the target without touching the project.
+- The local package `../SentryKeyProtocol` is already linked, the minimum deployment is iOS 17.0, and the camera and Face ID usage descriptions are set in the build settings.
+- The project file was written by hand and validated with `xcodebuild`, not created from Xcode's template. It has no asset catalog, so the app has no icon yet.
+
+**On the simulator** (no signing needed): pick an iPhone simulator and Run. Only the Welcome and pairing screens work there. The QR scanner is not supported on a simulator, so the Scan button stays disabled, and there is no Secure Enclave to create the key.
+
+From the command line, at the repository root:
+
+```bash
+xcodebuild -project SentryKey-iOS/SentryKey.xcodeproj -scheme SentryKey \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+```
+
+If `xcode-select` still points at the Command Line Tools and you cannot change it, set `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` instead.
+
+**On the iPhone 14 Pro:** in the target's Signing & Capabilities, choose your Personal Team and replace the placeholder bundle identifier `com.example.SentryKey` with one of your own. Do not commit that change.
 
 ## Try it on the iPhone
 

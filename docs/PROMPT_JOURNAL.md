@@ -400,3 +400,20 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - on the iPhone 14 Pro: the demo request shows exactly one Face ID prompt per signature, and enrolling a new face makes the key unusable;
   - the rate-limit defaults (5 per minute, 2-minute cooldown) and the 30-second answer time.
 - **Commit / PR:** branch `feature/ios-app-ui`
+
+### P-016 · 2026-11-24 · First build on a Mac: compile fix and Xcode project
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Build and run both Swift projects on a Mac for the first time, as a developer.
+- **Prompt (summary):** "we should create the xcode project, can you check both swift project, I want to test them (not as red team, just as a developer)". Then installing Xcode, running the app in the simulator, and questions on what the QR code and the two phone keys are for.
+- **Output (summary):**
+  - `SentryKeyProtocol`: one compile error, in `Approval/PromptRateLimiter.swift`. The closure passed to `recent.removeAll` read `self.window` while `self.recent` was being modified, which Swift rejects as overlapping access. Fixed by copying `window` to a local constant first. Behaviour is unchanged. All 70 tests pass with Xcode 27.2.
+  - `SentryKey-iOS`: `SentryKey.xcodeproj` written by hand (synchronized folder group, local package reference, usage descriptions in build settings), then validated with `xcodebuild`: builds for device in Debug and Release and for the simulator, with no errors or warnings in our code. The app launches in the simulator and shows the Welcome and pairing screens.
+  - `SentryKey-iOS/README.md` updated: the nine manual steps to create the project are replaced by how to open and build it.
+- **Decision:** Accepted. The bundle identifier is a placeholder (`com.example.SentryKey`) and the signing team is empty, so each developer sets their own without committing it.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of the two-line change in `PromptRateLimiter.swift` (security code);
+  - that the project opens in the Xcode interface, which was not tried: only `xcodebuild` was used;
+  - a run on the iPhone 14 Pro: pairing, the demo request, one Face ID per signature. Nothing past the pairing screen has run anywhere yet.
+- **Commit / PR:** pull request #9
