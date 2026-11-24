@@ -46,7 +46,19 @@ final class AppModel {
         case paired
     }
 
+    enum PairingStage: Equatable {
+        case notStarted
+        /// The QR code was scanned and the phone's keys exist. The Mac
+        /// has not confirmed it received them yet.
+        case waitingForMac
+        case confirmed
+    }
+
     private(set) var phase: Phase
+    private(set) var pairingStage = PairingStage.notStarted
+    /// What to send the Mac to finish pairing, once the Bluetooth link is
+    /// up. Nil when no pairing is in progress.
+    private(set) var pairingRequest: PairingRequest?
     private(set) var publicKeyLine: String?
     private(set) var keyFingerprint: String?
     private(set) var knownHosts: KnownHosts
@@ -65,6 +77,10 @@ final class AppModel {
     static let answerTime: TimeInterval = 30
 
     private let keyStore = KeyStore()
+    private let identityKeyStore = IdentityKeyStore()
+    private var pairing: PhonePairing?
+    /// Identity public keys of the Macs this phone is paired with.
+    private var pairedMacKeys: [[UInt8]] = []
     private let notifier = ApprovalNotifier()
     private let storage = Storage()
     private var ourKeyBlob: [UInt8]?
@@ -87,6 +103,7 @@ final class AppModel {
         case .saved(let saved):
             storageLoaded = true
             knownHosts = saved.knownHosts
+            pairedMacKeys = saved.pairedMacKeys ?? []
             phase = saved.isPaired ? .paired : .onboarding
             if saved.isPaired { loadKey() }
         case .none:
@@ -98,23 +115,78 @@ final class AppModel {
 
     private func save() {
         guard storageLoaded else { return }
-        storage.save(isPaired: phase == .paired, knownHosts: knownHosts)
+        storage.save(isPaired: phase == .paired, knownHosts: knownHosts, pairedMacKeys: pairedMacKeys)
     }
 
     // MARK: Pairing
 
-    /// Called with the text of the QR code on the Mac.
+    /// Called with the text of the QR code on the Mac. Creates the phone's
+    /// two keys and prepares the message that gives the Mac their public
+    /// halves. The phone is paired only once the Mac has confirmed.
     ///
-    /// TODO(J3): the QR payload format (Mac identity key + one-time secret)
-    /// is not specified yet (FLOWS.md, Pairing). For now this only checks the
-    /// size and creates the phone's SSH key.
+    /// TODO(J3): the BLE transport sends `pairingRequest` and passes the
+    /// Mac's answer to `receivePairingConfirmation`.
     func pair(qrPayload: String) throws {
-        guard !qrPayload.isEmpty, qrPayload.utf8.count <= 1024 else {
-            throw PairingError.unreadableCode
+        var scanned: PhonePairing
+        do {
+            scanned = try PhonePairing(code: qrPayload)
+        } catch {
+            throw PairingFailure.unreadableCode
         }
+        let sshKey = try keyStore.loadOrCreate()
+        let identityKey = try identityKeyStore.loadOrCreate()
+        pairingRequest = try scanned.request(
+            phoneIdentityKey: Array(identityKey.publicKey.x963Representation),
+            sshKeyBlob: try ECDSAP256.publicKeyBlob(x963Point: Array(sshKey.publicKey.x963Representation))
+        )
+        pairing = scanned
+        loadKey()
+        pairingStage = .waitingForMac
+    }
+
+    /// The Mac's answer to `pairingRequest`.
+    func receivePairingConfirmation(_ confirmation: PairingConfirmation) {
+        guard let pairing else { return }
+        do {
+            try pairing.confirm(confirmation)
+        } catch {
+            // Not from the Mac whose code was scanned: the pairing stays
+            // open, and only that Mac's real answer can close it.
+            return
+        }
+        if !pairedMacKeys.contains(pairing.macIdentityKey) {
+            pairedMacKeys.append(pairing.macIdentityKey)
+        }
+        self.pairing = nil
+        pairingRequest = nil
+        pairingStage = .confirmed
+        save()
+    }
+
+    /// Gives up on a pairing the Mac never confirmed. The keys stay: they
+    /// are reused by the next attempt.
+    func cancelPairing() {
+        pairing = nil
+        pairingRequest = nil
+        pairingStage = .notStarted
+    }
+
+    /// The identity key of the paired Mac with this fingerprint, for the
+    /// secure channel's handshake.
+    func pairedMacKey(fingerprint: [UInt8]) -> [UInt8]? {
+        pairedMacKeys.first { IdentityFingerprint.of(publicKey: $0) == fingerprint }
+    }
+
+    #if DEBUG
+    /// Creates the SSH key without any Mac, so the demo request can be
+    /// tried on a phone alone. Debug builds only: a release build pairs
+    /// with a real code or not at all.
+    func pairForDemo() throws {
         _ = try keyStore.loadOrCreate()
         loadKey()
+        pairingStage = .confirmed
     }
+    #endif
 
     func finishOnboarding() {
         phase = .paired
@@ -122,7 +194,7 @@ final class AppModel {
         Task { await notifier.requestPermission() }
     }
 
-    enum PairingError: LocalizedError {
+    enum PairingFailure: LocalizedError {
         case unreadableCode
         var errorDescription: String? { "This QR code is not a SentryKey pairing code." }
     }

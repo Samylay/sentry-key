@@ -555,3 +555,24 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - the notification disappears after approving, denying and after the 30-second expiry;
   - whether the app, when woken over Bluetooth rather than by a timer, is still allowed to post it. That is the architecture's first open question.
 - **Commit / PR:** branch `feature/local-notification`, stacked on pull request #13
+
+### P-024 · 2026-11-24 · Pairing by QR code (work package E)
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Replace the temporary pairing, which accepted any QR code, with the real one.
+- **Prompt (verbatim):** the same request as P-023 ("tu peux faire 4 PR pour ca? ..."), then "tu peux creer une PR poru chacune apres". This entry covers E.
+- **Output (summary):**
+  - `SentryKeyProtocol/.../Pairing/`: `PairingOffer` (the QR code), `PairingRequest`, `PairingConfirmation`, and `MacPairing` and `PhonePairing`, which check them with HMAC-SHA256 keyed by the one-time secret. 17 tests, 149 in the package.
+  - `Channel/SecureEnclaveIdentity.swift`: an `IdentitySigner` backed by a Secure Enclave key, for both devices.
+  - iPhone: `IdentityKeyStore` (the phone identity key, no Face ID, usable after first unlock), `AppModel.pair` reads a real code and prepares the request, a "Waiting for your Mac" screen, the paired Macs saved with the app's state, and a Debug-only "Pair without a Mac" so the demo request stays usable.
+  - Mac: `PairingStore` (the paired phone, replacing the fixed key store for the real agent) and `MacIdentityKey` (Secure Enclave). 8 tests, 53 in the agent package.
+  - Checked on this Mac that a command-line tool with no signature can create a Secure Enclave key and sign with it. The architecture had left this to verify.
+- **Decision:** Accepted. Two points the architecture leaves open were decided by the assistant and are proposals: an HMAC over a labelled transcript of the three public keys, and a QR code valid 2 minutes for one phone. The iPhone's `KeyStore.swift` was deliberately not touched: the identity key has its own file, at the cost of repeating about thirty lines of Keychain code.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of `Pairing.swift`, `PairingMessages.swift`, `IdentityKeyStore.swift`, `PairingStore.swift` and `SecureEnclaveIdentity.swift`;
+  - the two proposals above, then write the agreed ones into `docs/ARCHITECTURE.md`;
+  - **nothing on the iPhone was run**: it builds for iOS. The Secure Enclave calls for the identity key, and whether that key really works with the phone locked, need the iPhone 14 Pro;
+  - a Release build no longer shows "Pair without a Mac";
+  - the two Secure Enclave tests are skipped on the CI runner, which has no Secure Enclave: they only run on a real Mac.
+- **Commit / PR:** branch `feature/pairing`, stacked on pull request #14

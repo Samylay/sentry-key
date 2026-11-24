@@ -11,9 +11,10 @@ The Swift package shared by the iPhone app and the Mac agent. It has no dependen
 | `Framing/` | Length-prefixed framing for the agent socket, and splitting into chunks for BLE. |
 | `Link/` | The messages the Mac agent and the phone exchange inside the secure channel: a sign request with its session-bind, a cancellation, and the phone's answer. Each carries a request identifier, so a late answer is never taken for the answer to the next request. |
 | `Channel/` | The secure channel between the Mac and the phone: the two handshake messages, then AES-GCM messages with one key and one counter per direction. See below. |
+| `Pairing/` | Pairing by QR code: the offer the Mac shows, the phone's request and the Mac's confirmation. See below. |
 | `Approval/` | What the phone checks before it prompts: the login matches session-bind, the user name is safe to show, Ed25519 host key signature parts, fingerprints, server names recorded on first use, and the prompt rate limit. |
 
-Not yet written: pairing and the recovery code.
+Not yet written: the recovery code.
 
 **Security review:** everything here parses untrusted input from `ssh` or Bluetooth. It needs line-by-line human review, as CLAUDE.md requires.
 
@@ -40,6 +41,24 @@ Not yet written: pairing and the recovery code.
 The identity keys reach this code through the `IdentitySigner` protocol, so the same code runs with Secure Enclave keys on a device and with ordinary keys in tests.
 
 CryptoKit does not exist on Linux. There, `SecureChannel.swift` and its tests compile to nothing, and the rest of the package builds and is tested as before.
+
+## Pairing
+
+`Pairing/Pairing.swift` uses CryptoKit's HMAC-SHA256. It follows the Pairing section of `docs/ARCHITECTURE.md`.
+
+1. The Mac shows a QR code: its identity public key and a random 32-byte secret, valid for 2 minutes.
+2. The phone scans it, creates its two keys, and sends their public halves with an HMAC, keyed with the secret, over the three keys involved.
+3. The Mac checks the HMAC, records the phone's keys, and answers with an HMAC of its own over the same keys. The QR code is then spent.
+4. The phone checks that answer. Only then is it paired.
+
+The QR code is the one thing that does not cross the radio. It gives the phone the Mac's real key, and only the phone that saw the screen can compute the HMAC, so an attacker in Bluetooth range can neither swap a key nor pair in the phone's place.
+
+**Choices made where the architecture is silent** (`docs/FLOWS.md` lists both as not specified). Proposals, to be confirmed by the team:
+
+- **How the secret authenticates the keys:** an HMAC over a labelled transcript of all three public keys, with a different label on each side.
+- **How long the QR code is valid:** 2 minutes, for one phone. A request with a wrong HMAC does not spend the code, or any device in range could cancel a pairing by answering first.
+
+Also added: the Mac refuses a phone whose identity key and SSH key are the same key, since the architecture forbids one key in two roles.
 
 ## Running the tests
 
