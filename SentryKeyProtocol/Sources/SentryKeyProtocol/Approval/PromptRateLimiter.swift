@@ -26,6 +26,8 @@ public struct PromptRateLimiter: Sendable {
         if let blockedUntil, now < blockedUntil { return false }
         blockedUntil = nil
         // A clock moved backwards keeps old entries, which errs on refusing.
+        // Copied out: the closure may not read `self` while `recent` is being modified.
+        let window = window
         recent.removeAll { now.timeIntervalSince($0) >= window }
         guard recent.count < maxPrompts else {
             blockedUntil = now.addingTimeInterval(cooldown)
