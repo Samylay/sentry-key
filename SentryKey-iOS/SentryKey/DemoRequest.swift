@@ -49,7 +49,9 @@ enum DemoRequest {
         login.writeString(ourKeyBlob)
         login.writeString(hostKeyBlob.bytes)
 
-        model.receive(requestKeyBlob: ourKeyBlob, data: login.bytes, bind: bind)
+        // The Mac numbers its requests. The demo has no Mac, so any number will do.
+        let id = RequestID(rawValue: UInt32.random(in: 0...UInt32.max))
+        model.receive(.sign(id: id, keyBlob: ourKeyBlob, data: login.bytes, bind: bind))
     }
 }
 #endif

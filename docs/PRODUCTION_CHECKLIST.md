@@ -11,7 +11,7 @@ No iPhone has ever signed an SSH login. These are missing, not unfinished.
 | Missing | Where it goes | Milestone |
 |---|---|---|
 | Bluetooth link: peripheral on the iPhone, central on the Mac | `BLEPeripheral` in `SentryKey-iOS/`, `BLECentral` in a Mac app target. The Mac side implements `PhoneLink` (`SentryKey-macOS/Sources/SentryKeyAgent/Ports.swift`) | J3 |
-| Secure channel wired to a transport. The channel itself exists (`SentryKeyProtocol/.../Channel/`), tested with software keys only: nothing calls it yet, and no Secure Enclave key implements `IdentitySigner` | `SentryKey-iOS/`, the Mac app | J3 |
+| Secure channel over a real transport, with real keys. The channel exists and the Mac agent uses it (`SecurePhoneLink`), but only against a stand-in phone in the same process and with software identity keys: no Secure Enclave key implements `IdentitySigner`, and the iPhone app does not use `PhoneChannelSession` | `SentryKey-iOS/`, the Mac app | J3 |
 | Real pairing: QR payload, one-time secret, exchange of public keys | `SentryKeyProtocol/`, `AppModel.pair`, a pairing window on the Mac | J3 |
 | Phone identity key and Mac identity key, both in a Secure Enclave | `KeyStore.swift`, a Mac `IdentityKey` | J3 |
 | Local notification when a request arrives in the background | `AppModel.swift:178` | J3 |
@@ -26,8 +26,7 @@ The riskiest open question is still open: whether the Mac can reliably wake the 
 | Item | File | What to do |
 |---|---|---|
 | **Pairing accepts any QR code** under 1 KB and stores nothing about the Mac | `SentryKey-iOS/SentryKey/AppModel.swift:101-110` | Replace with real pairing. As it is, any QR code "pairs" the phone and no Mac is authenticated. |
-| **Answers go nowhere**: `sendResponse` is an empty closure | `AppModel.swift:56` | Wire to the secure channel. |
-| **Requests carry no identifier** on the phone side | `AppModel.receive(...)`, `AppModel.swift:146` | Take a `PhoneRequest`, answer with a `PhoneResponse` carrying the same `RequestID` (`SentryKeyProtocol/.../Link/LinkMessages.swift`), and handle `cancel`. |
+| **Answers go nowhere**: `sendResponse` is an empty closure, and nothing calls `receive(_:)` but the demo | `SentryKey-iOS/SentryKey/AppModel.swift` | Wire both to `PhoneChannelSession` over Bluetooth. |
 | **Stand-in phone with a software key on the Mac** | `SentryKey-macOS/Sources/SentryKeyAgentDevSupport/`, `Sources/sentrykey-agent-dev/` | Never link from a shipping target. Before a release, check the dependency list of every product. Consider moving both targets out of the shipped package. |
 | **Fixed public key store** | `FixedPublicKeyStore` in `Ports.swift` | Replace with a store that reads the key recorded at pairing. |
 | **Demo request** | `SentryKey-iOS/SentryKey/DemoRequest.swift`, `Views/SettingsView.swift:33` | Already inside `#if DEBUG`. Confirm on a Release build that the entry is gone. |
@@ -48,6 +47,7 @@ Each is a guess. Measure on real use, then record the reasoning in `docs/ARCHITE
 | Agent connections at once | 16 | `AgentSocket.maxConnections` |
 | Idle time before a connection is closed, write timeout | 300 s, 5 s | `AgentSocket.swift` |
 | How far a timestamp may be from the receiver's clock | 300 s | `ChannelLimits.clockToleranceSeconds` |
+| Time the Mac waits for the phone's handshake answer | 10 s | `SecurePhoneLink.defaultHandshakeTime` |
 
 The cooldown is also a way for malware on the Mac to lock the user out of every server (red team guide, T8.1). Decide whether that is acceptable before fixing the numbers.
 
@@ -77,7 +77,7 @@ Everything below compiles and nothing more. It has to be exercised on the iPhone
 ## 6. Review and verification still owed
 
 - **15 journal entries** say `PENDING: human to complete` under "Human verification" (`docs/PROMPT_JOURNAL.md`). Each lists what to check.
-- **Line-by-line review** by someone other than the author, required by CLAUDE.md for crypto and security code. Not done for any of: `KeyStore.swift`, `HostVerifier.swift`, `AppModel.swift`, `LoginApproval.swift`, `HostKeySignature.swift`, `DisplayText.swift`, `LinkMessages.swift`, `HandshakeMessages.swift`, `SecureChannel.swift`, `ECDSAP256.swift`, `AgentSocket.swift`, `AgentSession.swift`, `SigningQueue.swift`, `P256SignatureVerifier.swift`.
+- **Line-by-line review** by someone other than the author, required by CLAUDE.md for crypto and security code. Not done for any of: `KeyStore.swift`, `HostVerifier.swift`, `AppModel.swift`, `LoginApproval.swift`, `HostKeySignature.swift`, `DisplayText.swift`, `LinkMessages.swift`, `HandshakeMessages.swift`, `SecureChannel.swift`, `ECDSAP256.swift`, `ChannelSessions.swift`, `AgentSocket.swift`, `AgentSession.swift`, `SigningQueue.swift`, `SecurePhoneLink.swift`, `P256SignatureVerifier.swift`.
 - **Pull requests #6, #7 and #8 were merged without teammate review** (journal entries P-014 and P-015). The rule is one reviewer who is not the author.
 - **Red team pass**: none of the trees in `docs/red-team/README.md` has been run against code. Its section 7 lists twelve questions the design leaves open, among them who names a server on first use, and what a stranger's Bluetooth device can trigger before the handshake.
 - **`docs/THREAT_MODEL.md` describes an earlier design** (per-host policy, session approval, proximity). It has to be brought in line with `docs/ARCHITECTURE.md`, and must state the assumption that the Mac is not compromised at pairing time.

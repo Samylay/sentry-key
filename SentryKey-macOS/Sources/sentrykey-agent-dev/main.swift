@@ -3,9 +3,11 @@ import SentryKeyAgent
 import SentryKeyAgentDevSupport
 import SentryKeyProtocol
 
-// Development agent: the real ssh-agent socket and queue, with a stand-in
-// phone that holds a software key (see SoftwarePhone). For trying the agent
-// with a real `ssh`. Not the product: the product's key is on the iPhone.
+// Development agent: the real ssh-agent socket, queue and secure channel,
+// with a stand-in phone that holds a software key (see SoftwarePhone) and
+// lives in this process instead of behind Bluetooth. For trying the agent
+// with a real `ssh`. Not the product: the product's keys are on the iPhone
+// and in the Mac's Secure Enclave.
 
 private func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -18,6 +20,7 @@ private let usage = """
 
 private var socketPath: String?
 private var behaviour = SoftwarePhone.Behaviour.approve
+private var isPhoneReachable = true
 
 private var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
@@ -30,7 +33,7 @@ while let argument = arguments.next() {
         case "deny": behaviour = .deny
         case "silent": behaviour = .neverAnswer
         case "wrong-key": behaviour = .signWithAnotherKey
-        case "unreachable": behaviour = .unreachable
+        case "unreachable": isPhoneReachable = false
         default: fail(usage)
         }
     default:
@@ -54,9 +57,25 @@ do {
     fail("cannot create the stand-in key: \(error)")
 }
 
-private let queue = SigningQueue(link: phone)
+// Identity keys of the two devices. Software keys here; a Secure Enclave key
+// on each device in the product. Pairing is what would exchange them.
+private let macIdentity = SoftwareIdentity()
+private let phoneIdentity = SoftwareIdentity()
+private let macIdentityKey = macIdentity.publicKey
+
+private let connector = LoopbackPhoneConnector(
+    phoneIdentity: phoneIdentity,
+    pairedMacKey: { $0 == IdentityFingerprint.of(publicKey: macIdentityKey) ? macIdentityKey : nil },
+    answer: { await phone.answer(to: $0) }
+)
+connector.setReachable(isPhoneReachable)
+
+private let link = SecurePhoneLink(
+    identity: macIdentity, phoneIdentityKey: phoneIdentity.publicKey, connector: connector
+)
+private let queue = SigningQueue(link: link)
 Task {
-    for await response in phone.responses {
+    for await response in link.responses {
         await queue.deliver(response)
     }
 }

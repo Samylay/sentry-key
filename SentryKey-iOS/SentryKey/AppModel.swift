@@ -6,6 +6,8 @@ import SentryKeyProtocol
 /// One sign request waiting for the user, shown by `ApprovalView`.
 struct PendingRequest: Identifiable {
     let id = UUID()
+    /// The Mac's number for this request, repeated in the answer.
+    let requestID: RequestID
     let approval: LoginApproval
     let hostFingerprint: String
     /// The name the user gave this server earlier, or nil the first time.
@@ -33,7 +35,7 @@ struct LogEntry: Identifiable {
 
 /// The app's state and the decisions the user makes.
 ///
-/// TODO(J3): the BLE channel calls `receive(...)` and sets `sendResponse`.
+/// TODO(J3): the BLE channel calls `receive(_:)` and sets `sendResponse`.
 /// Until then, `showDemoRequest()` builds a request on the phone itself.
 /// TODO(J4): the signature history becomes the hash-chained audit log.
 @MainActor
@@ -52,8 +54,8 @@ final class AppModel {
     var pending: PendingRequest?
     var errorMessage: String?
 
-    /// Where replies to the Mac go. Set by the BLE channel.
-    var sendResponse: (AgentResponse) -> Void = { _ in }
+    /// Where answers to the Mac go. Set by the BLE channel.
+    var sendResponse: (PhoneResponse) -> Void = { _ in }
 
     /// How long the user has to answer. The Mac gives up after 30 to 60 s.
     static let answerTime: TimeInterval = 30
@@ -142,10 +144,24 @@ final class AppModel {
 
     // MARK: Sign requests
 
-    /// A sign request from the Mac, with the session-bind ssh sent before it.
-    func receive(requestKeyBlob: [UInt8], data: [UInt8], bind: SessionBind?) {
-        guard let ourKeyBlob else { return refuse("No signing key", server: nil) }
-        guard pending == nil else { return refuse("Another request is open", server: nil) }
+    /// A message from the Mac, received through the secure channel.
+    func receive(_ request: PhoneRequest) {
+        switch request {
+        case .sign(let id, let keyBlob, let data, let bind):
+            receiveSignRequest(id: id, requestKeyBlob: keyBlob, data: data, bind: bind)
+        case .cancel(let id):
+            cancel(id)
+        }
+    }
+
+    /// A sign request, with the session-bind ssh sent before it.
+    private func receiveSignRequest(id: RequestID, requestKeyBlob: [UInt8], data: [UInt8], bind: SessionBind?) {
+        guard let ourKeyBlob else {
+            return refuse(id, .keyUnavailable, shownAs: "No signing key", server: nil)
+        }
+        guard pending == nil else {
+            return refuse(id, .busy, shownAs: "Another request is open", server: nil)
+        }
 
         let approval: LoginApproval
         do {
@@ -153,20 +169,21 @@ final class AppModel {
                 requestKeyBlob: requestKeyBlob, data: data, bind: bind, ourKeyBlob: ourKeyBlob
             )
         } catch {
-            return refuse(Self.describe(error), server: nil)
+            return refuse(id, .invalidRequest, shownAs: Self.describe(error), server: nil)
         }
         // Checked after LoginApprovalCheck, which guarantees `bind` exists.
         guard let bind, HostVerifier.isValid(bind) else {
-            return refuse("Server signature invalid", server: nil)
+            return refuse(id, .invalidRequest, shownAs: "Server signature invalid", server: nil)
         }
 
         let fingerprint = Fingerprint.of(approval.hostKey)
         let name = knownHosts.name(forFingerprint: fingerprint)
         guard limiter.shouldPrompt(at: .now) else {
-            return refuse("Too many requests", server: name ?? Self.short(fingerprint))
+            return refuse(id, .rateLimited, shownAs: "Too many requests", server: name ?? Self.short(fingerprint))
         }
 
         let request = PendingRequest(
+            requestID: id,
             approval: approval,
             hostFingerprint: fingerprint,
             knownName: name,
@@ -178,8 +195,16 @@ final class AppModel {
         // TODO(J3, ApprovalFlow): post a local notification when in background.
         Task {
             try? await Task.sleep(for: .seconds(Self.answerTime))
-            if pending?.id == request.id { deny(request, reason: "Timed out") }
+            if pending?.id == request.id { deny(request, .expired, shownAs: "Timed out") }
         }
+    }
+
+    /// The Mac gave up on a request. If its prompt is still open, it is
+    /// closed without an answer: the Mac no longer listens for one.
+    private func cancel(_ id: RequestID) {
+        guard let request = pending, request.requestID == id else { return }
+        pending = nil
+        record(.refused("Cancelled by the Mac"), request: request)
     }
 
     /// Face ID, then one signature. `newName` names a first-time server.
@@ -194,7 +219,7 @@ final class AppModel {
             // The request may have timed out while Face ID was showing.
             guard pending?.id == request.id else { return }
             let blob = try ECDSAP256.signatureBlob(rawSignature: raw)
-            sendResponse(.signature(blob: blob))
+            sendResponse(PhoneResponse(id: request.requestID, outcome: .signature(blob: blob)))
             pending = nil
             remember(name: newName, for: request)
             record(.approved, request: request)
@@ -202,20 +227,22 @@ final class AppModel {
             // Interrupted by the system (a call, the app going to the
             // background): the request stays open until it expires.
         } catch let error as LAError where error.code == .userCancel {
-            deny(request, reason: "Cancelled at Face ID")
+            deny(request, .deniedByUser, shownAs: "Cancelled at Face ID")
         } catch {
             // Includes a key made unusable by a change in enrolled faces
             // (.biometryCurrentSet). The exact error is checked on a device.
-            deny(request, reason: "Face ID or key unavailable")
+            deny(request, .keyUnavailable, shownAs: "Face ID or key unavailable")
             errorMessage = "Signing failed. If you changed your Face ID settings, the key can no longer be used: pair again."
         }
     }
 
-    func deny(_ request: PendingRequest, reason: String? = nil) {
+    /// Closes a prompt without signing. With no arguments, the user tapped
+    /// Deny. `reason` goes to the Mac, `text` to the history.
+    func deny(_ request: PendingRequest, _ reason: RefusalReason = .deniedByUser, shownAs text: String? = nil) {
         guard pending?.id == request.id else { return }
-        sendResponse(.failure)
+        sendResponse(PhoneResponse(id: request.requestID, outcome: .refused(reason)))
         pending = nil
-        record(reason.map { .refused($0) } ?? .denied, request: request)
+        record(text.map { .refused($0) } ?? .denied, request: request)
     }
 
     // MARK: Known servers
@@ -242,9 +269,11 @@ final class AppModel {
         history.insert(LogEntry(date: .now, server: server, userName: request.approval.userName, outcome: outcome), at: 0)
     }
 
-    private func refuse(_ reason: String, server: String?) {
-        sendResponse(.failure)
-        history.insert(LogEntry(date: .now, server: server ?? "Unknown", userName: nil, outcome: .refused(reason)), at: 0)
+    /// Refuses a request before any prompt. `reason` goes to the Mac,
+    /// `text` to the history.
+    private func refuse(_ id: RequestID, _ reason: RefusalReason, shownAs text: String, server: String?) {
+        sendResponse(PhoneResponse(id: id, outcome: .refused(reason)))
+        history.insert(LogEntry(date: .now, server: server ?? "Unknown", userName: nil, outcome: .refused(text)), at: 0)
     }
 
     static func short(_ fingerprint: String) -> String {

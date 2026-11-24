@@ -513,3 +513,26 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - with real Secure Enclave keys on both devices, which could not be tried here;
   - that the team accepts the exception added to the secret scanner in `.gitleaks.toml`.
 - **Commit / PR:** branch `feature/secure-channel`, stacked on pull request #11
+
+### P-022 · 2026-11-24 · The agent through the secure channel, and the iPhone app on the link messages
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Make work packages A and B fit together before Bluetooth exists, and bring the iPhone app in line with the link messages from P-017.
+- **Prompt (verbatim):** "fais A et c sur une branche, j'ai merge 9". A and C were two of five options the assistant had listed: A, plug the channel into the agent; C, the iPhone side of the link messages.
+- **Output (summary):**
+  - `SentryKeyProtocol/.../Channel/ChannelSessions.swift`: `MacChannelSession` and `PhoneChannelSession`, one connection seen from each side. They take the messages received and return the messages to send, and do no input or output.
+  - `SentryKey-macOS`: `SecurePhoneLink`, a `PhoneLink` that opens a connection, runs the handshake, seals requests and opens answers, with a handshake timeout and one retry on a fresh connection. New ports `PhoneConnector` and `PhoneConnection`, which Bluetooth will implement.
+  - Development targets: `LoopbackPhoneConnector`, an in-memory connection whose phone end runs `PhoneChannelSession`, and `SoftwareIdentity`. The development agent now reaches its stand-in phone through the real handshake and channel.
+  - `SentryKey-iOS/SentryKey/AppModel.swift`: `receive(_:)` takes a `PhoneRequest`, every answer is a `PhoneResponse` with the request's identifier and a refusal reason, and a `cancel` from the Mac closes the open prompt.
+  - Tests: 9 for the sessions (132 in the protocol package), 10 for `SecurePhoneLink` (45 in the agent package). `Scripts/try-with-local-ssh.sh --with-timeout` passes: a real OpenSSH 10.5 login goes through the handshake and AES-GCM. The iPhone app builds for iOS in Debug and Release. The protocol package still builds and passes on Linux.
+- **Decision:** Accepted, after two faults found while testing:
+  - **The test helper `ManualTimeout`, written for P-018, was wrong.** It was built on one shared `AsyncStream`. Cancelling a task that iterates a stream ends the stream for good, so after the first cancelled wait every later timeout fired at once. Tests that depended on it passed or failed by chance, and the claim in P-018 that they were stable rested on five lucky runs. It was rewritten with one continuation per wait. The agent tests then passed 25 runs out of 25.
+  - The in-memory connection kept accepting sends after it was closed, so a request could wait forever for an answer. It now fails. Time limits were added to the two test suites that wait on streams, so a missing answer fails a test instead of hanging it.
+  The `AppModel` change was not run: it compiles, and the demo request needs a device.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of `ChannelSessions.swift` and `SecurePhoneLink.swift`, in particular that two sends can never reach the phone out of order, and what happens to a request in flight when the connection drops;
+  - `AppModel.swift`: the refusal reason chosen for each case, and that a `cancel` for a request that is not the open one changes nothing;
+  - on the iPhone 14 Pro: the demo request still reaches the approval sheet and signs;
+  - whether no answer should be sent after a `cancel` (the choice made here), or an explicit one.
+- **Commit / PR:** branch `feature/channel-integration`, stacked on pull request #12
