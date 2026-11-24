@@ -536,3 +536,22 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - on the iPhone 14 Pro: the demo request still reaches the approval sheet and signs;
   - whether no answer should be sent after a `cancel` (the choice made here), or an explicit one.
 - **Commit / PR:** branch `feature/channel-integration`, stacked on pull request #12
+
+### P-023 · 2026-11-24 · Local notification for a sign request (work package F)
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Tell the user a sign request is waiting when the app is not on screen, since Face ID needs the app in the foreground.
+- **Prompt (verbatim):** "tu peux faire 4 PR pour ca? prototype de réveil Bluetooth (lot C), transport Bluetooth (D), appairage (E), notification (F)". This entry covers F. The assistant took the four in the order F, E, D, C, because each builds on the previous one.
+- **Output (summary):**
+  - `SentryKey-iOS/SentryKey/ApprovalNotifier.swift`: a local notification posted when a request arrives while the app is not on screen, and removed when the request is answered, expires or is cancelled by the Mac.
+  - The notification names neither the server nor the account: it shows on the lock screen (red team guide, T9.2).
+  - Permission is asked at the end of pairing. `AppModel.isOnScreen` follows the scene phase.
+  - A second Debug button, "Show a demo request in 5 seconds", to try it without a Mac.
+- **Decision:** Accepted. The text of the notification is deliberately vague, which costs the user a tap before they know which server is asking. Time Sensitive notifications are not used: the architecture notes they are not available on a free account.
+- **Human verification:** PENDING: human to complete. Nothing here was run: it builds for iOS in Debug and Release, and the simulator cannot pair, so it cannot reach a demo request. On the iPhone 14 Pro, check:
+  - the permission prompt appears after pairing;
+  - with the delayed demo: the notification shows with the app in the background and with the phone locked, and tapping it opens the approval sheet;
+  - the notification disappears after approving, denying and after the 30-second expiry;
+  - whether the app, when woken over Bluetooth rather than by a timer, is still allowed to post it. That is the architecture's first open question.
+- **Commit / PR:** branch `feature/local-notification`, stacked on pull request #13

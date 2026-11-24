@@ -14,7 +14,6 @@ No iPhone has ever signed an SSH login. These are missing, not unfinished.
 | Secure channel over a real transport, with real keys. The channel exists and the Mac agent uses it (`SecurePhoneLink`), but only against a stand-in phone in the same process and with software identity keys: no Secure Enclave key implements `IdentitySigner`, and the iPhone app does not use `PhoneChannelSession` | `SentryKey-iOS/`, the Mac app | J3 |
 | Real pairing: QR payload, one-time secret, exchange of public keys | `SentryKeyProtocol/`, `AppModel.pair`, a pairing window on the Mac | J3 |
 | Phone identity key and Mac identity key, both in a Secure Enclave | `KeyStore.swift`, a Mac `IdentityKey` | J3 |
-| Local notification when a request arrives in the background | `AppModel.swift:178` | J3 |
 | Mac menu bar app: status, pairing, recent signatures | New app target. Needed for the Bluetooth permission, which a command-line tool cannot hold | J3 |
 | Hash-chained audit log, head mirrored on the Mac | `AppModel.swift:38`: the history is an in-memory array, lost when the app closes | J4 |
 | Recovery key, recovery code and key registry | `docs/ARCHITECTURE.md`, Recovery | J4 |
@@ -72,7 +71,7 @@ Everything below compiles and nothing more. It has to be exercised on the iPhone
 - The approval sheet, its timeout, and what happens when the app goes to the background mid-approval.
 - Whether the keys survive re-running the app from Xcode after the 7-day expiry, and deleting it.
 - The app snapshot is hidden in the app switcher.
-- The notification does not show a server and a user name on the lock screen to whoever picks up the phone (red team guide, T9.2).
+- The local notification: that it appears when the app is in the background and when the phone is locked, that it carries no server or user name (red team guide, T9.2), and that it disappears once the request is answered, expired or cancelled. Whether iOS still gives the app time to post it when woken over Bluetooth is the open question of the architecture.
 
 ## 6. Review and verification still owed
 

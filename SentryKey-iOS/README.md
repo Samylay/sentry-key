@@ -10,12 +10,12 @@ The iPhone side of SentryKey, in SwiftUI with Apple's own controls (Form, List, 
 2. Home: the key's fingerprint, and Share / Copy of the public key line for GitHub or `authorized_keys`.
 3. Settings › **Show a demo request** (Debug builds): the phone plays the server and `ssh`, then runs the real path: login checks, server signature check (`HostVerifier`), the approval sheet, Face ID, and a Secure Enclave signature.
 4. Recent requests list, and named servers (swipe to delete).
+5. A local notification when a request arrives while the app is not on screen. It names neither the server nor the account, since it shows on the lock screen. To try it: Settings › **Show a demo request in 5 seconds**, then leave the app.
 
 ## Not done yet (J3)
 
 - **Pairing payload.** The QR format (Mac identity key + one-time secret) is not specified yet, so `AppModel.pair(qrPayload:)` accepts any QR code under 1 KB. Temporary: it must not ship like this.
 - **BLE channel.** `AppModel.receive(_:)` takes the Mac's `PhoneRequest` and answers with a `PhoneResponse` carrying the same request identifier, but nothing calls it except the demo, and `sendResponse` goes nowhere. The phone's side of the secure channel exists in the shared package (`PhoneChannelSession`) and is not used by the app yet.
-- **Local notification** when a request arrives in the background (ApprovalFlow).
 - **Audit log** with a hash chain (the history is in memory only).
 
 ## Open and build
