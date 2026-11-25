@@ -8,24 +8,24 @@ import VisionKit
 struct PairingView: View {
     @Environment(AppModel.self) private var model
     @State private var isScanning = false
-    @State private var isPaired = false
     @State private var scanError: String?
 
     var body: some View {
         Group {
-            if isPaired {
-                PairedView()
-            } else {
-                intro
+            switch model.pairingStage {
+            case .notStarted: intro
+            case .waitingForMac: WaitingForMacView()
+            case .confirmed: PairedView()
             }
         }
-        .navigationBarBackButtonHidden(isPaired)
+        .animation(.default, value: model.pairingStage)
+        .navigationBarBackButtonHidden(model.pairingStage != .notStarted)
         .fullScreenCover(isPresented: $isScanning) {
             QRScannerSheet { payload in
                 isScanning = false
                 do {
                     try model.pair(qrPayload: payload)
-                    withAnimation { isPaired = true }
+                    scanError = nil
                 } catch {
                     scanError = error.localizedDescription
                 }
@@ -53,6 +53,16 @@ struct PairingView: View {
                         .font(.subheadline)
                         .foregroundStyle(.red)
                 }
+                #if DEBUG
+                Button("Pair without a Mac (demo)") {
+                    do {
+                        try model.pairForDemo()
+                    } catch {
+                        scanError = error.localizedDescription
+                    }
+                }
+                .font(.subheadline)
+                #endif
             }
             .padding(24)
         }
@@ -69,6 +79,32 @@ struct PairingView: View {
             .disabled(!QRScannerSheet.isSupported)
         }
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Between the scan and the Mac's confirmation.
+struct WaitingForMacView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .controlSize(.large)
+            Text("Waiting for your Mac")
+                .font(.title2.bold())
+            Text("Keep this iPhone next to the Mac that shows the code.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom) {
+            Button("Cancel", role: .cancel) {
+                model.cancelPairing()
+            }
+            .controlSize(.large)
+            .padding(24)
+        }
     }
 }
 

@@ -1,15 +1,18 @@
 import Foundation
 import SentryKeyProtocol
 
-/// Saves the pairing flag and server names in one JSON file.
+/// Saves the pairing flag, the paired Macs and server names in one JSON file.
 ///
 /// The file uses `complete` data protection (CLAUDE.md): it is unreadable
-/// while the phone is locked. It holds no secret, only fingerprints and the
-/// names the user typed.
+/// while the phone is locked. It holds no secret, only public keys,
+/// fingerprints and the names the user typed.
 struct Storage {
     struct Saved: Codable {
         var isPaired = false
         var knownHosts = KnownHosts()
+        /// Identity public keys of the paired Macs. Optional so a file
+        /// written before this field existed still loads.
+        var pairedMacKeys: [[UInt8]]?
     }
 
     private var url: URL {
@@ -40,8 +43,8 @@ struct Storage {
         return .saved(saved)
     }
 
-    func save(isPaired: Bool, knownHosts: KnownHosts) {
-        let saved = Saved(isPaired: isPaired, knownHosts: knownHosts)
+    func save(isPaired: Bool, knownHosts: KnownHosts, pairedMacKeys: [[UInt8]]) {
+        let saved = Saved(isPaired: isPaired, knownHosts: knownHosts, pairedMacKeys: pairedMacKeys)
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true

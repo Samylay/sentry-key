@@ -14,7 +14,7 @@ The iPhone side of SentryKey, in SwiftUI with Apple's own controls (Form, List, 
 
 ## Not done yet (J3)
 
-- **Pairing payload.** The QR format (Mac identity key + one-time secret) is not specified yet, so `AppModel.pair(qrPayload:)` accepts any QR code under 1 KB. Temporary: it must not ship like this.
+- **Pairing cannot finish yet.** The app reads a real pairing code, creates its two Secure Enclave keys and prepares its request, then waits for the Mac's confirmation. Nothing carries those two messages until the Bluetooth link exists. In Debug builds, **Pair without a Mac (demo)** on the pairing screen creates the SSH key alone, so the demo request can still be tried.
 - **BLE channel.** `AppModel.receive(_:)` takes the Mac's `PhoneRequest` and answers with a `PhoneResponse` carrying the same request identifier, but nothing calls it except the demo, and `sendResponse` goes nowhere. The phone's side of the secure channel exists in the shared package (`PhoneChannelSession`) and is not used by the app yet.
 - **Audit log** with a hash chain (the history is in memory only).
 
@@ -41,7 +41,7 @@ If `xcode-select` still points at the Command Line Tools and you cannot change i
 
 ## Try it on the iPhone
 
-1. Pair with any QR code (temporary, see above).
+1. On the pairing screen, tap **Pair without a Mac (demo)** (Debug builds).
 2. Settings › Show a demo request.
 3. Check the sheet: "New server", a fingerprint, account `git`. Type a name, tap Approve, look at the phone.
 4. Back on Home, the request shows as Signed. Run the demo again: it shows a new fingerprint, because each demo uses a new server key.

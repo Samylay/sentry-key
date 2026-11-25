@@ -22,6 +22,7 @@ Inside `SentryKeyAgent`:
 | `SecurePhoneLink` | The `PhoneLink` that goes through the secure channel: opens a connection, runs the handshake, seals each request and opens each answer. Keeps the connection for the next requests, and starts again with a new handshake after any error. |
 | `Ports` | The interfaces the rest plugs into: `PhoneLink` (the way to the phone), `PhoneConnector` and `PhoneConnection` (a raw connection that carries messages, which Bluetooth will implement), `PublicKeyStore`, `SignatureVerifying`. |
 | `P256SignatureVerifier` | Checks the phone's signature with CryptoKit before `ssh` sees it. |
+| `PairingStore` | The agent's private folder on disk, the record of the paired phone (public keys only), and `MacIdentityKey`, the Mac identity key in the Mac's Secure Enclave. |
 
 The menu bar app, the Bluetooth central and the Mac identity key are not here yet. They need an app bundle (for the Bluetooth permission) and will use this library: the Bluetooth central is one more `PhoneConnector`, and everything above it stays as it is.
 
@@ -41,7 +42,7 @@ When the phone refuses, does not answer or cannot be reached, `ssh` gets a failu
 swift test
 ```
 
-45 tests, none of which sleeps: timeouts are injected and fired by hand.
+53 tests, none of which sleeps: timeouts are injected and fired by hand.
 
 ## Try it with a real ssh
 
@@ -71,4 +72,5 @@ Needs line-by-line human review, as CLAUDE.md requires:
 - `AgentSession.swift`: which messages reach the phone, and the forwarding rule.
 - `SigningQueue.swift`: matching answers to requests, and the timeout.
 - `SecurePhoneLink.swift`: when a connection is opened, reused and dropped, and that sends stay in order.
+- `PairingStore.swift`: file permissions, and what the Mac identity key file does and does not protect.
 - `P256SignatureVerifier.swift` and `ECDSAP256.rawSignature(fromSignatureBlob:)` in `SentryKeyProtocol`: crypto and parsing.
