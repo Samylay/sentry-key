@@ -33,6 +33,7 @@ final class PhoneLinkController {
         model.recordEvent = { [log] in log.record($0) }
         log.record("app launched")
         model.sendPairingRequest = { [weak self] in self?.sendPairingRequestToAll($0) }
+        model.dropConnections = { [weak self] in self?.dropSessions(of: $0) }
         // Bluetooth is only asked for once it has a use: after pairing
         // started, or at launch when a Mac is paired. `hasPairedMac` comes
         // from the Keychain, so it is known even on a background launch
@@ -58,6 +59,17 @@ final class PhoneLinkController {
         log.record("device disconnected")
         sessions[device] = nil
         requestOrigins = requestOrigins.filter { $0.value != device }
+    }
+
+    /// Ends the sessions of a Mac that was just unpaired. Its next message
+    /// is refused like a stranger's, since new sessions no longer know it.
+    private func dropSessions(of macFingerprint: [UInt8]) {
+        let devices = sessions.filter { $0.value.macFingerprint == macFingerprint }.map(\.key)
+        for device in devices {
+            sessions[device] = nil
+            requestOrigins = requestOrigins.filter { $0.value != device }
+            peripheral.send(TransportMessage.channelReset.encoded(), to: device)
+        }
     }
 
     private func sendPairingRequestToAll(_ request: PairingRequest) {

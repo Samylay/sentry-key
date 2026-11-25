@@ -27,7 +27,10 @@ struct SentryKeyApp: App {
                 }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     model.isOnScreen = phase == .active
-                    if phase == .active { model.reloadIfNeeded() }
+                    if phase == .active {
+                        model.reloadIfNeeded()
+                        model.checkNotifications()
+                    }
                 }
         }
     }

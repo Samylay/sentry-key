@@ -1,10 +1,61 @@
 import SwiftUI
 
+import SentryKeyProtocol
+
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openURL) private var openURL
+    /// The Mac waiting for the user to confirm "Forget".
+    @State private var macToForget: [UInt8]?
 
     var body: some View {
         List {
+            if !model.notificationsAllowed {
+                Section {
+                    Label("Notifications are off", systemImage: "bell.slash")
+                    Button("Open iOS Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    }
+                } footer: {
+                    Text("A sign-in request that arrives while SentryKey is not open will not be announced, and will expire unseen.")
+                }
+            }
+
+            Section {
+                if model.pairedMacKeys.isEmpty {
+                    Text("No Mac is paired.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(model.pairedMacKeys, id: \.self) { key in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Mac")
+                            Text(Self.shortFingerprint(of: key))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Forget", role: .destructive) { macToForget = key }
+                    }
+                }
+            } header: {
+                Text("Paired Macs")
+            } footer: {
+                Text("Forget a Mac you lost or no longer use: it can no longer send sign-in requests to this iPhone.")
+            }
+            .confirmationDialog(
+                "Forget this Mac?",
+                isPresented: Binding(get: { macToForget != nil }, set: { if !$0 { macToForget = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Forget Mac", role: .destructive) {
+                    if let key = macToForget { model.forgetMac(identityKey: key) }
+                    macToForget = nil
+                }
+            } message: {
+                Text("It will no longer be able to ask this iPhone for signatures. To use it again, pair it again.")
+            }
+
             Section {
                 if model.knownHosts.count == 0 {
                     Text("Servers you name in a request appear here.")
@@ -57,6 +108,12 @@ struct SettingsView: View {
             #endif
         }
         .navigationTitle("Settings")
+    }
+
+    /// The start of the Mac identity key's SHA-256, enough to tell two Macs
+    /// apart. Public: it names a key, it is not one.
+    private static func shortFingerprint(of key: [UInt8]) -> String {
+        IdentityFingerprint.of(publicKey: key).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 }
 

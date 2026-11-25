@@ -77,6 +77,14 @@ final class AppModel {
     var recordEvent: (String) -> Void = { _ in }
     /// Sends the pairing request to the Mac. Set by `PhoneLinkController`.
     var sendPairingRequest: (PairingRequest) -> Void = { _ in }
+    /// Closes the open connections of a Mac the user forgot, by identity
+    /// fingerprint. Set by `PhoneLinkController`.
+    var dropConnections: ([UInt8]) -> Void = { _ in }
+
+    /// False when the user turned notifications off: a request that
+    /// arrives while the app is not open then goes unnoticed. Shown in
+    /// Settings.
+    private(set) var notificationsAllowed = true
 
     /// True while the app is on screen. Set by the app's scene. A request
     /// that arrives otherwise is announced by a notification.
@@ -229,7 +237,28 @@ final class AppModel {
     func finishOnboarding() {
         phase = .paired
         save()
-        Task { await notifier.requestPermission() }
+        checkNotifications()
+    }
+
+    /// Asks for notification permission if it was never asked, and notes
+    /// whether it is granted. Called when pairing ends and each time the
+    /// app comes to the screen, so a phone paired with an older build, or
+    /// a user who changed their mind in Settings, is covered too.
+    func checkNotifications() {
+        guard phase == .paired else { return }
+        Task { notificationsAllowed = await notifier.requestPermission() }
+    }
+
+    // MARK: Paired Macs
+
+    /// Unpairs a Mac: it can no longer open a channel or send a request.
+    /// For a lost or stolen Mac (ARCHITECTURE.md, Recovery). Its open
+    /// connections are closed at once.
+    func forgetMac(identityKey: [UInt8]) {
+        pairedMacKeys.removeAll { $0 == identityKey }
+        save()
+        saveLinkState()
+        dropConnections(IdentityFingerprint.of(publicKey: identityKey))
     }
 
     enum PairingFailure: LocalizedError {
