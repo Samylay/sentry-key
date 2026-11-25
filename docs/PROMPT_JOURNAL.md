@@ -417,3 +417,21 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that the project opens in the Xcode interface, which was not tried: only `xcodebuild` was used;
   - a run on the iPhone 14 Pro: pairing, the demo request, one Face ID per signature. Nothing past the pairing screen has run anywhere yet.
 - **Commit / PR:** pull request #9
+
+### P-017 · 2026-11-24 · J3 development plan and the Mac to phone link messages
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Decide what to build next to reach J3, and fix the interface the remaining work packages share.
+- **Prompt (verbatim):** "ok, c'est pushed. c'est quoi la suite? on se fait un plan de dev?" The author then chose: a plan for the whole team up to J3, the Mac agent as his own work package, and no device testing on his Mac.
+- **Output (summary):**
+  - An inventory of the code against `docs/ARCHITECTURE.md`: the SSH formats, the approval checks and the iPhone screens exist; the Mac agent, all Bluetooth code, the secure channel and real pairing do not.
+  - A plan in seven work packages: A Mac agent, B secure channel, C Bluetooth wake-up prototype (the riskiest open question, to run first on a Mac with the iPhone), D Bluetooth transport, E real pairing, F local notification, G integration and demo. A, B and C can start in parallel.
+  - `SentryKeyProtocol/Sources/SentryKeyProtocol/Link/LinkMessages.swift`: `PhoneRequest` (sign, cancel), `PhoneResponse` (signature or a refusal reason) and `RequestID`, encoded with the existing `WireWriter` and `WireReader` and the existing size limits. 15 tests: round trips, every truncation, trailing bytes, unknown types, oversized fields, and a pass through `Framing` and `Reassembler`.
+  - Two findings from the inventory: `AppModel.receive` and `sendResponse` carry no request identifier, and the code already verifies session-bind and refuses non-Ed25519 host keys, which is stricter than the J3 row of the architecture ("reported by the Mac, labelled unverified").
+- **Decision:** Accepted. The request identifier was added because the Mac times out before the phone does: without it a late answer could be matched to the next request. The assignment of packages B to F is a proposal, not agreed with the team. The architecture document was not changed: whether to keep the stricter J3 behaviour is for the team to decide.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of `LinkMessages.swift` (it parses untrusted input on both devices);
+  - that the team agrees on the message set before the Bluetooth and channel work builds on it, in particular the `cancel` message and the list of refusal reasons;
+  - the plan itself with Samylay and Axel.
+- **Commit / PR:** branch `feature/phone-link-messages`, stacked on pull request #9
