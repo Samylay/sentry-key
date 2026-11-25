@@ -103,8 +103,9 @@ The Mac scans for the phone only during pairing, with the app in the foreground,
 ### Channel (each connection)
 1. Each side generates an ephemeral P-256 ECDH key and signs it with its identity key. Each verifies the other's signature with the key stored at pairing.
 2. HKDF derives one AES-GCM key per direction, with a salt built from both session nonces and an `info` covering the protocol version, both identity fingerprints and the direction.
-3. Nonces are a per-direction 96-bit counter. The connection is closed if a counter would wrap.
-4. **How this meets "every message is signed":** the handshake is signed by both identity keys, and every following message is authenticated by AES-GCM under keys derived from it. Signing every message individually would add cost without stopping any additional attack.
+3. Nonces are a per-direction 64-bit counter, padded to AES-GCM's 96 bits with four zero bytes. The connection is closed if a counter would wrap. A receiver accepts only the next count. Each side holds the channel as one shared object, never a copy, so a counter is never duplicated (`SecureChannel` is a class).
+4. **Replayed hellos:** the Mac's signature cannot cover the phone's nonce, because the Mac speaks first. The phone therefore refuses a Mac hello whose signed timestamp is outside the clock tolerance, and keeps the nonces of the hellos it accepted while they are still inside it (`RecentHelloNonces`). A recorded hello played back is refused before the phone signs anything. The cache records only hellos with a valid Mac signature. If it is ever full, it refuses new hellos rather than forgetting old ones.
+5. **How this meets "every message is signed":** the handshake is signed by both identity keys, and every following message is authenticated by AES-GCM under keys derived from it. Signing every message individually would add cost without stopping any additional attack.
 
 ### Signing (every SSH use)
 1. `ssh` connects to a server and sends the agent a `session-bind@openssh.com` message: the server's host key, the session identifier, and the server's signature over it (OpenSSH 8.9 and later).

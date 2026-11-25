@@ -25,10 +25,16 @@ private struct PairedDevices {
         try MacHandshake(identity: mac, phoneIdentityKey: phone.publicKey, now: time ?? now)
     }
 
-    func phoneAccepts(_ hello: MacHello, at time: Date? = nil) throws(ChannelError) -> PhoneHandshake.Accepted {
+    /// - Parameter recentHellos: a fresh cache by default, so a test can
+    ///   accept the same hello twice; pass one to test replay refusal.
+    func phoneAccepts(
+        _ hello: MacHello, at time: Date? = nil,
+        recentHellos: RecentHelloNonces = RecentHelloNonces()
+    ) throws(ChannelError) -> PhoneHandshake.Accepted {
         try PhoneHandshake.accept(
             hello, identity: phone,
             pairedMacKey: { $0 == IdentityFingerprint.of(publicKey: mac.publicKey) ? mac.publicKey : nil },
+            recentHellos: recentHellos,
             now: time ?? now
         )
     }
@@ -48,7 +54,7 @@ struct ChannelHandshakeTests {
     private let devices = PairedDevices()
 
     @Test func opensAChannelThatWorksBothWays() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
 
         let request = try mac.seal([1, 2, 3], now: devices.now)
         #expect(try phone.open(request, now: devices.now) == [1, 2, 3])
@@ -154,6 +160,68 @@ struct ChannelHandshakeTests {
         }
     }
 
+    @Test func macFinishesAHandshakeOnlyOnce() throws {
+        let handshake = try devices.macHandshake()
+        let answer = try devices.phoneAccepts(handshake.hello).answer
+        _ = try handshake.finish(with: answer)
+
+        // A second channel would have the same keys and counter: refused.
+        #expect(throws: ChannelError.closed) { try handshake.finish(with: answer) }
+    }
+
+    @Test func phoneRefusesAHelloItAlreadyAccepted() throws {
+        let recentHellos = RecentHelloNonces()
+        let hello = try devices.macHandshake().hello
+        _ = try devices.phoneAccepts(hello, recentHellos: recentHellos)
+
+        // Recorded off the air and played back a minute later.
+        #expect(throws: ChannelError.replayedHello) {
+            try devices.phoneAccepts(hello, at: devices.now.addingTimeInterval(60), recentHellos: recentHellos)
+        }
+    }
+
+    @Test func phoneStillAcceptsANewHelloFromTheSameMac() throws {
+        let recentHellos = RecentHelloNonces()
+        _ = try devices.phoneAccepts(try devices.macHandshake().hello, recentHellos: recentHellos)
+
+        _ = try devices.phoneAccepts(try devices.macHandshake().hello, recentHellos: recentHellos)
+    }
+
+    @Test func phoneDoesNotRecordARefusedHello() throws {
+        let recentHellos = RecentHelloNonces()
+        let hello = try devices.macHandshake().hello
+        #expect(throws: ChannelError.timestampOutOfWindow) {
+            try devices.phoneAccepts(hello, at: devices.now.addingTimeInterval(tolerance + 1), recentHellos: recentHellos)
+        }
+
+        // Refused for its time, not as a replay: it was never recorded.
+        _ = try devices.phoneAccepts(hello, recentHellos: recentHellos)
+    }
+
+    @Test func helloCacheForgetsNoncesOnlyOnceTheirHelloHasExpired() {
+        let cache = RecentHelloNonces()
+        let nonce = [UInt8](repeating: 9, count: ChannelLimits.nonceLength)
+        let stamp = UInt64(devices.now.timeIntervalSince1970)
+        #expect(cache.insertIfNew(nonce, timestamp: stamp, now: devices.now))
+
+        #expect(!cache.insertIfNew(nonce, timestamp: stamp, now: devices.now.addingTimeInterval(tolerance)))
+        #expect(cache.insertIfNew(nonce, timestamp: stamp, now: devices.now.addingTimeInterval(tolerance + 1)))
+    }
+
+    @Test func helloCacheFailsClosedWhenFull() {
+        let cache = RecentHelloNonces()
+        let stamp = UInt64(devices.now.timeIntervalSince1970)
+        for value in 0..<RecentHelloNonces.capacity {
+            var nonce = [UInt8](repeating: 0, count: ChannelLimits.nonceLength)
+            nonce[0] = UInt8(value & 0xFF)
+            nonce[1] = UInt8(value >> 8)
+            #expect(cache.insertIfNew(nonce, timestamp: stamp, now: devices.now))
+        }
+
+        let fresh = [UInt8](repeating: 0xEE, count: ChannelLimits.nonceLength)
+        #expect(!cache.insertIfNew(fresh, timestamp: stamp, now: devices.now))
+    }
+
     @Test func macRefusesAnAnswerRecordedOnAnotherConnection() throws {
         let earlier = try devices.macHandshake()
         let recordedAnswer = try devices.phoneAccepts(earlier.hello).answer
@@ -169,15 +237,16 @@ struct ChannelHandshakeTests {
         // of the phone the Mac called.
         let answer = try PhoneHandshake.accept(
             try MacHandshake(identity: devices.mac, phoneIdentityKey: otherPhone.publicKey, now: devices.now).hello,
-            identity: otherPhone, pairedMacKey: { _ in devices.mac.publicKey }, now: devices.now
+            identity: otherPhone, pairedMacKey: { _ in devices.mac.publicKey },
+            recentHellos: RecentHelloNonces(), now: devices.now
         ).answer
 
         #expect(throws: ChannelError.invalidSignature) { try handshake.finish(with: answer) }
     }
 
     @Test func givesEveryConnectionItsOwnKeys() throws {
-        var (firstMac, _) = try devices.connect()
-        var (_, secondPhone) = try devices.connect()
+        let (firstMac, _) = try devices.connect()
+        let (_, secondPhone) = try devices.connect()
 
         let sealed = try firstMac.seal([1], now: devices.now)
 
@@ -191,7 +260,7 @@ struct SecureChannelTests {
     private var now: Date { devices.now }
 
     @Test func deliversSeveralMessagesInOrder() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
 
         for value in UInt8(0)..<5 {
             let sealed = try mac.seal([value], now: now)
@@ -200,13 +269,13 @@ struct SecureChannelTests {
     }
 
     @Test func deliversAnEmptyMessage() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
 
         #expect(try phone.open(try mac.seal([], now: now), now: now) == [])
     }
 
     @Test func hidesTheContent() throws {
-        var (mac, _) = try devices.connect()
+        let (mac, _) = try devices.connect()
         let secret = [UInt8](repeating: 0xAB, count: 64)
 
         let sealed = try mac.seal(secret, now: now)
@@ -217,7 +286,7 @@ struct SecureChannelTests {
     }
 
     @Test func refusesAMessageReceivedTwice() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
         let sealed = try mac.seal([1], now: now)
         _ = try phone.open(sealed, now: now)
 
@@ -225,7 +294,7 @@ struct SecureChannelTests {
     }
 
     @Test func refusesMessagesOutOfOrder() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
         _ = try mac.seal([1], now: now)
         let second = try mac.seal([2], now: now)
 
@@ -234,42 +303,69 @@ struct SecureChannelTests {
     }
 
     @Test func refusesAMessageSentBackToItsAuthor() throws {
-        var (mac, _) = try devices.connect()
+        let (mac, _) = try devices.connect()
         let sealed = try mac.seal([1], now: now)
 
         #expect(throws: ChannelError.authenticationFailed) { try mac.open(sealed, now: now) }
     }
 
     @Test func refusesAnyAlteredByte() throws {
-        var (mac, phone) = try devices.connect()
-        let original = try mac.seal([1, 2, 3, 4], now: now)
+        let length = try devices.connect().mac.seal([1, 2, 3, 4], now: now).count
 
-        for index in original.indices {
-            var altered = original
+        // A new connection per byte: a receiver closes after one failure.
+        for index in 0..<length {
+            let (mac, phone) = try devices.connect()
+            var altered = try mac.seal([1, 2, 3, 4], now: now)
             altered[index] ^= 0x01
-            // A copy: the real receiver would be closed after one failure.
-            var receiver = phone
             #expect(throws: ChannelError.self, "byte \(index)") {
-                _ = try receiver.open(altered, now: now)
+                _ = try phone.open(altered, now: now)
             }
         }
-        #expect(try phone.open(original, now: now) == [1, 2, 3, 4])
     }
 
     @Test func refusesEveryTruncation() throws {
-        var (mac, phone) = try devices.connect()
-        let original = try mac.seal([1, 2, 3, 4], now: now)
+        let length = try devices.connect().mac.seal([1, 2, 3, 4], now: now).count
 
-        for length in 0..<original.count {
-            var receiver = phone
-            #expect(throws: ChannelError.self, "length \(length)") {
-                _ = try receiver.open(Array(original.prefix(length)), now: now)
+        for prefix in 0..<length {
+            let (mac, phone) = try devices.connect()
+            let original = try mac.seal([1, 2, 3, 4], now: now)
+            #expect(throws: ChannelError.self, "length \(prefix)") {
+                _ = try phone.open(Array(original.prefix(prefix)), now: now)
             }
         }
     }
 
+    @Test func refusesToOpenAMessageThatIsTooLarge() throws {
+        let (_, phone) = try devices.connect()
+        let tooLarge = [UInt8](
+            repeating: 0, count: SecureChannel.headerLength + SecureChannel.maxPlaintextLength + SecureChannel.tagLength + 1
+        )
+
+        #expect(throws: ChannelError.messageTooLarge) { try phone.open(tooLarge, now: now) }
+    }
+
+    @Test func refusesAMessageFromTooFarInTheFuture() throws {
+        let (mac, phone) = try devices.connect()
+        let sealed = try mac.seal([1], now: now.addingTimeInterval(tolerance + 1))
+
+        #expect(throws: ChannelError.timestampOutOfWindow) { try phone.open(sealed, now: now) }
+    }
+
+    @Test func copiesOfAChannelShareOneCounter() throws {
+        let (mac, phone) = try devices.connect()
+        let copy = mac
+
+        // With a struct, both would seal under counter 0: a reused nonce.
+        let first = try mac.seal([1], now: now)
+        let second = try copy.seal([2], now: now)
+
+        #expect(first.prefix(SecureChannel.headerLength) != second.prefix(SecureChannel.headerLength))
+        #expect(try phone.open(first, now: now) == [1])
+        #expect(try phone.open(second, now: now) == [2])
+    }
+
     @Test func refusesAMessageDeliveredTooLate() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
         let sealed = try mac.seal([1], now: now)
 
         #expect(throws: ChannelError.timestampOutOfWindow) {
@@ -278,7 +374,7 @@ struct SecureChannelTests {
     }
 
     @Test func staysClosedAfterOneBadMessage() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
         let good = try mac.seal([1], now: now)
         var bad = good
         bad[bad.count - 1] ^= 0x01
@@ -290,14 +386,14 @@ struct SecureChannelTests {
     }
 
     @Test func refusesToSealAMessageThatIsTooLarge() throws {
-        var (mac, _) = try devices.connect()
+        let (mac, _) = try devices.connect()
         let tooLarge = [UInt8](repeating: 0, count: SecureChannel.maxPlaintextLength + 1)
 
         #expect(throws: ChannelError.messageTooLarge) { try mac.seal(tooLarge, now: now) }
     }
 
     @Test func sealsTheLargestAllowedMessage() throws {
-        var (mac, phone) = try devices.connect()
+        let (mac, phone) = try devices.connect()
         let largest = [UInt8](repeating: 7, count: SecureChannel.maxPlaintextLength)
 
         #expect(try phone.open(try mac.seal(largest, now: now), now: now) == largest)
@@ -308,7 +404,7 @@ struct SecureChannelTests {
         let phoneKey = P256.KeyAgreement.PrivateKey()
         let fingerprint = [UInt8](repeating: 1, count: ChannelLimits.fingerprintLength)
         let nonce = [UInt8](repeating: 2, count: ChannelLimits.nonceLength)
-        var channel = try SecureChannel(
+        let channel = try SecureChannel(
             role: .mac, ephemeralKey: macKey,
             peerEphemeralKey: Array(phoneKey.publicKey.x963Representation),
             macNonce: nonce, phoneNonce: nonce,

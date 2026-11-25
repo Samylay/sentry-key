@@ -17,6 +17,8 @@ final class PhoneLinkController {
     private let peripheral = BLEPeripheral()
     private let identityKeyStore = IdentityKeyStore()
     private var sessions: [UUID: PhoneChannelSession] = [:]
+    /// One for the whole app: a hello replayed on any connection is refused.
+    private let recentHellos = RecentHelloNonces()
     private var connected: Set<UUID> = []
     /// Which device sent the request the user is looking at, so the answer
     /// goes back to that one. `AppModel` handles one request at a time.
@@ -110,7 +112,8 @@ final class PhoneLinkController {
             identity: SecureEnclaveIdentity(key: key),
             pairedMacKey: { fingerprint in
                 pairedMacKeys.first { IdentityFingerprint.of(publicKey: $0) == fingerprint }
-            }
+            },
+            recentHellos: recentHellos
         )
     }
 
