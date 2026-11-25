@@ -71,6 +71,8 @@ final class AppModel {
     var sendResponse: (PhoneResponse) -> Void = { _ in }
     /// Turns Bluetooth on. Set by `PhoneLinkController`.
     var startBluetooth: () -> Void = {}
+    /// Notes an event in the Bluetooth test log. Set by `PhoneLinkController`.
+    var recordEvent: (String) -> Void = { _ in }
     /// Sends the pairing request to the Mac. Set by `PhoneLinkController`.
     var sendPairingRequest: (PairingRequest) -> Void = { _ in }
 
@@ -271,7 +273,10 @@ final class AppModel {
             expiresAt: .now.addingTimeInterval(Self.answerTime)
         )
         pending = request
-        if !isOnScreen { notifier.post(for: request) }
+        if !isOnScreen {
+            notifier.post(for: request)
+            recordEvent("notification posted")
+        }
         Task {
             try? await Task.sleep(for: .seconds(Self.answerTime))
             if pending?.id == request.id { deny(request, .expired, shownAs: "Timed out") }

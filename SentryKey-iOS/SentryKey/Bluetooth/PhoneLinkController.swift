@@ -21,6 +21,7 @@ final class PhoneLinkController {
     /// Which device sent the request the user is looking at, so the answer
     /// goes back to that one. `AppModel` handles one request at a time.
     private var requestOrigins: [RequestID: UUID] = [:]
+    private let log = WakeLog.shared
 
     init(model: AppModel) {
         self.model = model
@@ -29,6 +30,8 @@ final class PhoneLinkController {
         peripheral.onMessage = { [weak self] in self?.received($1, from: $0) }
         model.sendResponse = { [weak self] in self?.send($0) }
         model.startBluetooth = { [weak self] in self?.peripheral.start() }
+        model.recordEvent = { [log] in log.record($0) }
+        log.record("app launched")
         model.sendPairingRequest = { [weak self] in self?.sendPairingRequestToAll($0) }
         // Bluetooth is only asked for once it has a use: after pairing
         // started, or at launch when the phone is already paired.
@@ -37,6 +40,7 @@ final class PhoneLinkController {
 
     private func deviceConnected(_ device: UUID) {
         connected.insert(device)
+        log.record("device connected")
         // A pairing in progress: the Mac showing the code is one of the
         // devices that connect. The request holds public keys only, and
         // only that Mac can answer it, so sending it to a stranger costs
@@ -48,6 +52,7 @@ final class PhoneLinkController {
 
     private func deviceDisconnected(_ device: UUID) {
         connected.remove(device)
+        log.record("device disconnected")
         sessions[device] = nil
         requestOrigins = requestOrigins.filter { $0.value != device }
     }
@@ -79,9 +84,11 @@ final class PhoneLinkController {
             switch try session.receive(body, now: .now) {
             case .handshakeAnswer(let answer):
                 sessions[device] = session
+                log.record("handshake accepted")
                 peripheral.send(TransportMessage.channel(answer).encoded(), to: device)
             case .request(let request):
                 sessions[device] = session
+                log.record("request received")
                 if case .sign = request { requestOrigins[request.id] = device }
                 model.receive(request)
             }
@@ -90,6 +97,7 @@ final class PhoneLinkController {
             // The session is gone, and a paired Mac starts a new one with a
             // new handshake.
             sessions[device] = nil
+            log.record("message refused")
         }
     }
 
@@ -115,5 +123,6 @@ final class PhoneLinkController {
         }
         sessions[device] = session
         peripheral.send(TransportMessage.channel(sealed).encoded(), to: device)
+        log.record("answer sent")
     }
 }

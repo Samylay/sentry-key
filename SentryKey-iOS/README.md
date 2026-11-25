@@ -45,6 +45,10 @@ If `xcode-select` still points at the Command Line Tools and you cannot change i
 3. Check the sheet: "New server", a fingerprint, account `git`. Type a name, tap Approve, look at the phone.
 4. Back on Home, the request shows as Signed. Run the demo again: it shows a new fingerprint, because each demo uses a new server key.
 
+## Bluetooth test log
+
+In Debug builds, Settings › **Bluetooth test log** lists what the app did each time a Mac reached it (connected, handshake accepted, request received, notification posted, answer sent), with the state the app was in. It holds event names and times only. It is the phone's half of `docs/BLE_WAKE_TEST.md`.
+
 ## Security review
 
 Needs line-by-line human review, as CLAUDE.md requires:
