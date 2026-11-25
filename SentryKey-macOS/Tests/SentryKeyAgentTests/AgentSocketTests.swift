@@ -44,6 +44,11 @@ private final class TestClient {
         close(descriptor)
     }
 
+    /// Hangs up, as ssh does on Ctrl-C.
+    func hangUp() {
+        shutdown(descriptor, SHUT_RDWR)
+    }
+
     func send(_ bytes: [UInt8]) {
         _ = bytes.withUnsafeBytes { write(descriptor, $0.baseAddress, $0.count) }
     }
@@ -93,6 +98,26 @@ struct AgentSocketTests {
         return AgentSocket(path: folder.socketPath) {
             AgentSession(keys: keys, queue: queue, verifier: P256SignatureVerifier())
         }
+    }
+
+    @Test func cancelsTheRequestWhenTheClientHangsUp() async throws {
+        let link = RecordingLink()
+        let keys = FixedPublicKeyStore(identity: identity)
+        let queue = SigningQueue(link: link, waitForTimeout: ManualTimeout().wait)
+        let agent = AgentSocket(path: folder.socketPath) {
+            AgentSession(keys: keys, queue: queue, verifier: P256SignatureVerifier())
+        }
+        try agent.start()
+        defer { agent.stop() }
+
+        let client = try TestClient(path: folder.socketPath)
+        client.sendMessage(body: AgentRequestBody.sign(keyBlob: identity.keyBlob, data: [7]))
+        _ = await link.nextSign()
+        client.hangUp()
+
+        // No answer will come and no timeout fires: only the hang-up can
+        // end the request.
+        #expect(await link.nextCancel() == .cancel(id: id(0)))
     }
 
     @Test func answersAClientOverTheSocket() throws {

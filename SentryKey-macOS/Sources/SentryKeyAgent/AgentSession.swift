@@ -94,6 +94,8 @@ public actor AgentSession {
             report(.phoneUnreachable)
         case .queueFull:
             report(.queueFull)
+        case .cancelled:
+            report(.cancelledByClient)
         }
         // Never a key on disk as a fallback: failing is the secure outcome.
         return .failure

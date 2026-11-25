@@ -8,6 +8,8 @@ public enum SignOutcome: Equatable, Sendable {
     case phoneUnreachable
     /// Too many requests were already waiting for the phone.
     case queueFull
+    /// The caller's task was cancelled (ssh went away) before the answer.
+    case cancelled
 }
 
 /// Sends sign requests to the phone one at a time and matches each answer
@@ -62,6 +64,9 @@ public actor SigningQueue {
     public func sign(keyBlob: [UInt8], data: [UInt8], bind: SessionBind?) async -> SignOutcome {
         guard await takeTurn() else { return .queueFull }
         defer { passTurn() }
+        // ssh may have gone away while this request waited for its turn:
+        // nothing is sent, and the phone shows no prompt for it.
+        guard !Task.isCancelled else { return .cancelled }
 
         let id = RequestID(rawValue: nextID)
         nextID &+= 1
@@ -84,8 +89,14 @@ public actor SigningQueue {
             guard !Task.isCancelled else { return }
             await expire(id)
         }
-        let outcome = await withCheckedContinuation { continuation in
-            inFlight?.continuation = continuation
+        // If ssh goes away now, the phone is told to close its prompt and
+        // the turn passes to the next request at once.
+        let outcome = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                inFlight?.continuation = continuation
+            }
+        } onCancel: {
+            Task { await self.giveUp(id, outcome: .cancelled) }
         }
         timeout.cancel()
         return outcome
@@ -118,11 +129,20 @@ public actor SigningQueue {
     }
 
     private func expire(_ id: RequestID) async {
+        await giveUp(id, outcome: .timedOut)
+    }
+
+    /// Ends a request without the phone's answer, and tells the phone to
+    /// drop its prompt.
+    private func giveUp(_ id: RequestID, outcome: SignOutcome) async {
         guard inFlight?.id == id else { return }
-        resolve(.timedOut)
-        // Tells the phone to drop its prompt. Best effort: the phone has its
-        // own timeout, and its late answer would be dropped here anyway.
+        // The cancel is sent before the request ends: ending it hands the
+        // turn to the next request, whose sign must not reach the phone
+        // before this cancel, or the phone would answer it "busy".
+        // Best effort: the phone has its own timeout, and its late answer
+        // would be dropped here anyway.
         try? await link.send(.cancel(id: id))
+        resolve(outcome)
     }
 
     private func resolve(_ outcome: SignOutcome) {

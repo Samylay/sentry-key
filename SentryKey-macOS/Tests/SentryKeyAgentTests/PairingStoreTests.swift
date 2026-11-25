@@ -85,9 +85,51 @@ struct PairingStoreTests {
             atPath: folder.path, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]
         )
         for content in ["", "not json", #"{"identityKey":"AAAA","sshKeyBlob":"AAAA"}"#] {
-            FileManager.default.createFile(atPath: folder.path + "/paired-phone.json", contents: Data(content.utf8))
+            // Private, so only the content can be the reason it is ignored.
+            FileManager.default.createFile(
+                atPath: folder.path + "/paired-phone.json", contents: Data(content.utf8),
+                attributes: [.posixPermissions: 0o600]
+            )
             #expect(PairingStore(folder: folder).load() == nil, "content: \(content)")
         }
+    }
+
+    @Test func ignoresARecordWhoseIdentityKeyIsNotOnTheCurve() throws {
+        let phone = try makePhone()
+        let notAPoint = [0x04] + [UInt8](repeating: 0xFF, count: ChannelLimits.publicKeyLength - 1)
+        try PairingStore(folder: folder).save(PairedPhone(identityKey: notAPoint, sshKeyBlob: phone.sshKeyBlob))
+
+        #expect(PairingStore(folder: folder).load() == nil)
+    }
+
+    @Test func ignoresAPairingFileOtherUsersCouldHaveWritten() throws {
+        let store = PairingStore(folder: folder)
+        try store.save(try makePhone())
+        chmod(folder.path + "/paired-phone.json", 0o622)
+
+        #expect(store.load() == nil)
+        #expect(store.identity() == nil)
+    }
+
+    @Test func ignoresAPairingFileInAFolderOtherUsersCanEnter() throws {
+        let store = PairingStore(folder: folder)
+        try store.save(try makePhone())
+        // Another user could have planted the file before the folder was
+        // made private again, or could swap it now.
+        chmod(folder.path, 0o777)
+
+        #expect(store.load() == nil)
+    }
+
+    @Test func ignoresAPairingFileThatIsASymbolicLink() throws {
+        let store = PairingStore(folder: folder)
+        let phone = try makePhone()
+        try store.save(phone)
+        let elsewhere = folder.path + "/elsewhere.json"
+        try FileManager.default.moveItem(atPath: folder.path + "/paired-phone.json", toPath: elsewhere)
+        try FileManager.default.createSymbolicLink(atPath: folder.path + "/paired-phone.json", withDestinationPath: elsewhere)
+
+        #expect(store.load() == nil)
     }
 
     // A hosted CI runner is a virtual machine without a Secure Enclave.

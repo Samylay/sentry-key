@@ -53,6 +53,41 @@ struct SigningQueueTests {
         #expect(await link.nextCancel() == .cancel(id: id(0)))
     }
 
+    @Test func whenTheCallerGoesAwayItTellsThePhoneBeforeTheNextRequest() async {
+        let queue = makeQueue()
+        let abandoned = Task { await queue.sign(keyBlob: [1], data: [2], bind: nil) }
+        _ = await link.nextSign()
+        // ssh is interrupted with Ctrl-C while the phone shows its prompt.
+        abandoned.cancel()
+
+        #expect(await abandoned.value == .cancelled)
+        async let next = queue.sign(keyBlob: [1], data: [3], bind: nil)
+        _ = await link.nextSign()
+        await queue.deliver(PhoneResponse(id: id(1), outcome: .refused(.deniedByUser)))
+        #expect(await next == .refused(.deniedByUser))
+
+        // The phone heard about the abandoned request first.
+        #expect(await link.sent == [
+            .sign(id: id(0), keyBlob: [1], data: [2], bind: nil),
+            .cancel(id: id(0)),
+            .sign(id: id(1), keyBlob: [1], data: [3], bind: nil),
+        ])
+    }
+
+    @Test func aRequestAbandonedWhileWaitingIsNeverSent() async {
+        let queue = makeQueue()
+        async let first = queue.sign(keyBlob: [1], data: [2], bind: nil)
+        _ = await link.nextSign()
+        let waiting = Task { await queue.sign(keyBlob: [1], data: [3], bind: nil) }
+        #expect(await eventually { await queue.waitingCount == 1 })
+        waiting.cancel()
+
+        await queue.deliver(PhoneResponse(id: id(0), outcome: .refused(.deniedByUser)))
+        #expect(await first == .refused(.deniedByUser))
+        #expect(await waiting.value == .cancelled)
+        #expect(await link.sent.count == 1)
+    }
+
     @Test func doesNotGiveALateAnswerToTheNextRequest() async {
         let queue = makeQueue()
         async let first = queue.sign(keyBlob: [1], data: [2], bind: nil)

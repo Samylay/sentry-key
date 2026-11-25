@@ -207,7 +207,7 @@ public final class AgentSocket: Sendable {
 
             guard let bodies = try? reassembler.append(buffer[0..<count]) else { return }
             for body in bodies {
-                let response = waitFor { try? await session.handle(body: body) }
+                let response = waitFor(watching: connection) { try? await session.handle(body: body) }
                 guard let response, writeAll(response.encoded(), to: connection) else { return }
             }
         }
@@ -228,16 +228,54 @@ public final class AgentSocket: Sendable {
 /// Runs an async operation from a connection thread and blocks that thread
 /// until it finishes. Only for threads this file created: blocking a thread
 /// of the Swift concurrency pool this way could deadlock it.
-private func waitFor<Result: Sendable>(_ operation: @escaping @Sendable () async -> Result) -> Result {
+///
+/// While waiting, it watches the client. If the client closes the
+/// connection (Ctrl-C on ssh), the operation is cancelled, so the phone
+/// drops its prompt and the next request does not wait behind a dead one.
+private func waitFor<Result: Sendable>(
+    watching connection: Int32,
+    _ operation: @escaping @Sendable () async -> Result
+) -> Result {
     let result = OSAllocatedUnfairLock<Result?>(initialState: nil)
     let finished = DispatchSemaphore(value: 0)
-    Task {
+    let task = Task {
         let value = await operation()
         result.withLock { $0 = value }
         finished.signal()
     }
-    finished.wait()
+    var watching = true
+    while finished.wait(timeout: .now() + .milliseconds(200)) == .timedOut {
+        guard watching else { continue }
+        switch clientState(connection) {
+        case .waiting:
+            break
+        case .closed:
+            task.cancel()
+            watching = false
+        case .sentMore:
+            // ssh does not send before it has its answer, so this is not
+            // expected. The bytes stay for the read loop; stop watching.
+            watching = false
+        }
+    }
     return result.withLock { $0 }!
+}
+
+private enum ClientState {
+    case waiting
+    case closed
+    case sentMore
+}
+
+/// Looks at the connection without consuming anything from it.
+private func clientState(_ connection: Int32) -> ClientState {
+    var probe = pollfd(fd: connection, events: Int16(POLLIN), revents: 0)
+    guard poll(&probe, 1, 0) > 0 else { return .waiting }
+    var byte: UInt8 = 0
+    let count = recv(connection, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+    if count > 0 { return .sentMore }
+    if count == 0 { return .closed }
+    return errno == EAGAIN || errno == EINTR ? .waiting : .closed
 }
 
 /// A `sockaddr_un` for a path, in the form the socket calls take.
