@@ -14,7 +14,7 @@ The iPhone side of SentryKey, in SwiftUI with Apple's own controls (Form, List, 
 ## Not done yet (J3)
 
 - **Pairing payload.** The QR format (Mac identity key + one-time secret) is not specified yet, so `AppModel.pair(qrPayload:)` accepts any QR code under 1 KB. Temporary: it must not ship like this.
-- **BLE channel and Mac agent.** Nothing calls `AppModel.receive(...)` except the demo, and `sendResponse` goes nowhere.
+- **BLE channel.** `AppModel.receive(_:)` takes the Mac's `PhoneRequest` and answers with a `PhoneResponse` carrying the same request identifier, but nothing calls it except the demo, and `sendResponse` goes nowhere. The phone's side of the secure channel exists in the shared package (`PhoneChannelSession`) and is not used by the app yet.
 - **Local notification** when a request arrives in the background (ApprovalFlow).
 - **Audit log** with a hash chain (the history is in memory only).
 

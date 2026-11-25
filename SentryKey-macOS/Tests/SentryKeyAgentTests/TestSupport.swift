@@ -52,22 +52,63 @@ actor RecordingLink: PhoneLink {
 }
 
 /// A timeout the test fires by hand, so no test waits on a real clock.
-struct ManualTimeout: Sendable {
-    private let fired: AsyncStream<Void>
-    private let trigger: AsyncStream<Void>.Continuation
-
-    init() {
-        (fired, trigger) = AsyncStream.makeStream()
+///
+/// Each `fire()` ends one wait: the one in progress, or else the next one to
+/// start. A wait also ends when its task is cancelled, as `Task.sleep` does.
+///
+/// Not built on a shared `AsyncStream`: cancelling one task that iterates a
+/// stream ends the stream for every later iteration, so each later wait
+/// would return at once, as if the timeout had fired.
+final class ManualTimeout: Sendable {
+    private struct State {
+        var unusedFires = 0
+        var lastWaitNumber = 0
+        var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
+        var cancelled: Set<Int> = []
     }
 
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
     var wait: @Sendable () async -> Void {
-        { [fired] in
-            for await _ in fired { return }
-        }
+        { [self] in await waitUntilFired() }
     }
 
     func fire() {
-        trigger.yield()
+        let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            guard let number = state.waiting.keys.min() else {
+                state.unusedFires += 1
+                return nil
+            }
+            return state.waiting.removeValue(forKey: number)
+        }
+        waiter?.resume()
+    }
+
+    private func waitUntilFired() async {
+        let number = state.withLock { state -> Int in
+            state.lastWaitNumber += 1
+            return state.lastWaitNumber
+        }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let endsNow = state.withLock { state -> Bool in
+                    if state.cancelled.contains(number) { return true }
+                    if state.unusedFires > 0 {
+                        state.unusedFires -= 1
+                        return true
+                    }
+                    state.waiting[number] = continuation
+                    return false
+                }
+                if endsNow { continuation.resume() }
+            }
+        } onCancel: {
+            let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+                state.cancelled.insert(number)
+                return state.waiting.removeValue(forKey: number)
+            }
+            waiter?.resume()
+        }
     }
 }
 

@@ -35,6 +35,8 @@ Not yet written: pairing and the recovery code.
 - **The clock tolerance is 5 minutes**, for the handshake and for every message. Not measured.
 - **`MacHello` names the Mac** by the fingerprint of its identity key, sent in clear, so a phone paired with several Macs knows which key to check. Someone listening can tell two connections come from the same Mac.
 
+`Channel/ChannelSessions.swift` wraps this for each side: `MacChannelSession` and `PhoneChannelSession` take the messages received and return the messages to send, handshake first, then sign requests and their answers. They do no input or output, so the same code serves Bluetooth on the devices and an in-memory connection in tests.
+
 The identity keys reach this code through the `IdentitySigner` protocol, so the same code runs with Secure Enclave keys on a device and with ordinary keys in tests.
 
 CryptoKit does not exist on Linux. There, `SecureChannel.swift` and its tests compile to nothing, and the rest of the package builds and is tested as before.

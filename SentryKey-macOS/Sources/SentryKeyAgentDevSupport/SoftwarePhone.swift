@@ -13,7 +13,7 @@ import SentryKeyProtocol
 /// It runs the same checks as the phone before signing (`LoginApprovalCheck`
 /// and the server's signature over the session), so a request the phone
 /// would refuse is refused here too. It asks nobody: `Behaviour` decides.
-public actor SoftwarePhone: PhoneLink {
+public actor SoftwarePhone {
     public enum Behaviour: Sendable {
         case approve
         case deny
@@ -21,22 +21,15 @@ public actor SoftwarePhone: PhoneLink {
         case neverAnswer
         /// Answers with a signature from another key.
         case signWithAnotherKey
-        /// The phone cannot be reached at all.
-        case unreachable
     }
-
-    public struct Unreachable: Error {}
 
     /// The stand-in's SSH public key blob, to install on the test server.
     public nonisolated let publicKeyBlob: [UInt8]
-    /// Answers to pass to `SigningQueue.deliver`.
-    public nonisolated let responses: AsyncStream<PhoneResponse>
 
     // The secret scanner takes the type name on this line for a secret.
     private let standInKey: P256.Signing.PrivateKey // gitleaks:allow
     private let behaviour: Behaviour
     private let onApproval: @Sendable (LoginApproval) -> Void
-    private let answer: AsyncStream<PhoneResponse>.Continuation
 
     /// - Parameter onApproval: called with what the phone would display,
     ///   just before signing.
@@ -49,13 +42,12 @@ public actor SoftwarePhone: PhoneLink {
         self.behaviour = behaviour
         self.onApproval = onApproval
         self.publicKeyBlob = try ECDSAP256.publicKeyBlob(x963Point: Array(key.publicKey.x963Representation))
-        // The queue sends one request at a time, so answers never pile up.
-        (responses, answer) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(4))
     }
 
-    public func send(_ request: PhoneRequest) async throws {
-        if case .unreachable = behaviour { throw Unreachable() }
-        guard case .sign(let id, let keyBlob, let data, let bind) = request else { return }
+    /// What the phone answers to one request, or nil when it stays silent.
+    public func answer(to request: PhoneRequest) -> PhoneResponse? {
+        // A cancel needs no answer, and there is no prompt here to drop.
+        guard case .sign(let id, let keyBlob, let data, let bind) = request else { return nil }
 
         let approval: LoginApproval
         do {
@@ -63,31 +55,33 @@ public actor SoftwarePhone: PhoneLink {
                 requestKeyBlob: keyBlob, data: data, bind: bind, ourKeyBlob: publicKeyBlob
             )
         } catch {
-            answer.yield(PhoneResponse(id: id, outcome: .refused(.invalidRequest)))
-            return
+            return PhoneResponse(id: id, outcome: .refused(.invalidRequest))
         }
         // `LoginApprovalCheck` guarantees `bind` exists.
         guard let bind, Self.serverSigned(bind) else {
-            answer.yield(PhoneResponse(id: id, outcome: .refused(.invalidRequest)))
-            return
+            return PhoneResponse(id: id, outcome: .refused(.invalidRequest))
         }
 
         switch behaviour {
         case .approve:
             onApproval(approval)
-            answer.yield(PhoneResponse(id: id, outcome: try signature(over: data, with: standInKey)))
+            return signedResponse(id: id, data: data, key: standInKey)
         case .signWithAnotherKey:
-            answer.yield(PhoneResponse(id: id, outcome: try signature(over: data, with: P256.Signing.PrivateKey())))
+            return signedResponse(id: id, data: data, key: P256.Signing.PrivateKey())
         case .deny:
-            answer.yield(PhoneResponse(id: id, outcome: .refused(.deniedByUser)))
-        case .neverAnswer, .unreachable:
-            break
+            return PhoneResponse(id: id, outcome: .refused(.deniedByUser))
+        case .neverAnswer:
+            return nil
         }
     }
 
-    private func signature(over data: [UInt8], with key: P256.Signing.PrivateKey) throws -> PhoneResponse.Outcome {
-        let raw = try key.signature(for: Data(data)).rawRepresentation
-        return .signature(blob: try ECDSAP256.signatureBlob(rawSignature: Array(raw)))
+    private func signedResponse(id: RequestID, data: [UInt8], key: P256.Signing.PrivateKey) -> PhoneResponse {
+        guard let raw = try? key.signature(for: Data(data)).rawRepresentation,
+              let blob = try? ECDSAP256.signatureBlob(rawSignature: Array(raw))
+        else {
+            return PhoneResponse(id: id, outcome: .refused(.keyUnavailable))
+        }
+        return PhoneResponse(id: id, outcome: .signature(blob: blob))
     }
 
     /// The same rule as `HostVerifier` in the iOS app: the server signed the
@@ -99,5 +93,23 @@ public actor SoftwarePhone: PhoneLink {
             return false
         }
         return hostKey.isValidSignature(Data(parts.signature), for: Data(bind.sessionID))
+    }
+}
+
+/// An identity key held in memory. On the devices, identity keys live in a
+/// Secure Enclave.
+///
+/// DEVELOPMENT AND TESTS ONLY, like `SoftwarePhone`.
+public struct SoftwareIdentity: IdentitySigner {
+    private let key = P256.Signing.PrivateKey()
+
+    public init() {}
+
+    public var publicKey: [UInt8] {
+        Array(key.publicKey.x963Representation)
+    }
+
+    public func signature(for message: [UInt8]) throws -> [UInt8] {
+        Array(try key.signature(for: Data(message)).rawRepresentation)
     }
 }

@@ -2,7 +2,7 @@ import SentryKeyAgent
 import SentryKeyProtocol
 import Testing
 
-@Suite("Queue of sign requests")
+@Suite("Queue of sign requests", .timeLimit(.minutes(1)))
 struct SigningQueueTests {
     let link = RecordingLink()
     let timeout = ManualTimeout()
