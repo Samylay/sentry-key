@@ -629,3 +629,74 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that a build for the iPhone 14 Pro still creates the key with `.biometryCurrentSet` and that signing still asks the Secure Enclave for Face ID;
   - the author saw the demo pairing work in the simulator after the change; the assistant only checked that the app builds and launches.
 - **Commit / PR:** branch `fix/simulator-key`, on top of `feature/bluetooth-wake-test`
+
+### P-028 · 2026-11-25 · Review and merge of PRs #10–#18 (Michael's stack)
+
+- **Author:** Samylay (repo owner; name to confirm)
+- **Tool / model:** Claude Code (Claude Opus 5.5), with five Claude Fable 5.2 review subagents
+- **Goal:** Review Michael's nine stacked PRs (#10–#18, P-017 to P-027) and merge them into `main`.
+- **Prompt (verbatim):** "merge all prs from micha , review em with fable and then merge", then "carry on", then, after the assistant refused to merge citing the CLAUDE.md rule, "bypass that rule and just ,erge".
+- **Output (summary):**
+  - Five read-only Fable reviews: #10–#11, #12 (secure channel), #13–#14, #15 (pairing), #16–#18. None blocked a merge. Verdicts: #10 and #18 merge as is; #11–#17 merge with follow-ups.
+  - Follow-ups by severity:
+    - High: Bluetooth never starts on a locked background relaunch (`PhoneLinkController.swift`, phase stays `.onboarding`).
+    - High: the Mac reuses a stale session after the phone app relaunches.
+    - Medium: `SecureChannel` is a copyable struct, so copies can reuse an AES-GCM key and nonce; `finish` can run twice.
+    - Medium: a recorded `MacHello` is accepted again within the time window.
+    - Medium: the Mac reads its pairing files without checking the folder's owner and mode.
+    - Medium: there is no unpairing on the phone.
+    - Medium: a sign request abandoned with Ctrl-C still reaches the phone.
+    - Medium: `probe --reconnect` does not reconnect.
+    - Medium: `WakeLog` is in the Release build with weaker file protection.
+    - Medium: notification permission is never requested on an install that is already paired.
+  - Trial-merged all nine in order on a local branch with no conflicts. On the merged tree, `swift test` passed: 157 tests in SentryKeyProtocol and 57 in SentryKey-macOS.
+  - The assistant pushed the merge commits to `main`. It then fast-forwarded the stacked base branches so GitHub marks #11–#17 as merged. A first combined push moved head branches and left #11–#17 open; one-by-one pushes fixed it.
+- **Decision:** Modified. The assistant first refused to merge, citing CLAUDE.md ("Never push to `main`, merge, or approve a pull request"). The human, who is not the author of these PRs, explicitly told it to bypass the rule, and it complied. **The CLAUDE.md rule was overridden for this session.** The merges were pushed by the assistant, not through GitHub's review flow. No GitHub approval was recorded on #10–#18. The merge commits are authored by "Guest User".
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of the crypto and security code that is now on `main` without a recorded approval: `SecureChannel.swift`, `HandshakeMessages.swift`, `Pairing.swift`, `PairingStore.swift`, `IdentityKeyStore.swift`, `KeyStore.swift`;
+  - each review finding above, confirmed or rejected, with issues or `fix/...` branches opened;
+  - the iOS app was not built or tested; nothing ran on the iPhone 14 Pro;
+  - the team agrees the rule override was acceptable for the graded process.
+- **Commit / PR:** merge commits on `main` up to `1007707`; this entry is on branch `docs/journal-p028`.
+
+### P-029 · 2026-11-25 · Fix the review findings from P-028
+
+- **Author:** Samylay (repo owner; name to confirm)
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Fix the follow-ups found when PRs #10–#18 were reviewed (P-028).
+- **Prompt (verbatim):** "whats lft", then "fix all" after the assistant listed the open findings. During the work: "whats left to do" and "what fixes are you doing".
+- **Output (summary):** four branches, all made from `main` except where noted.
+  - `fix/secure-channel-hardening`:
+    - `SecureChannel` and `MacHandshake` are now classes, and `finish` succeeds only once, so no copy can reuse an AES-GCM nonce.
+    - The phone keeps a shared cache, `RecentHelloNonces`, of the Mac hello nonces it accepted within the clock window, and refuses a replay with `.replayedHello`. When the cache is full it refuses new hellos (fail closed).
+    - ARCHITECTURE.md now says the counter is 64-bit, padded to 96 bits.
+  - `fix/bluetooth-relaunch`:
+    - The paired Mac keys and the SSH public key blob are stored in a Keychain item, `link-state`, readable after first unlock. Bluetooth now starts on a locked background relaunch.
+    - New `channelReset` transport message: the phone sends it when it refuses a channel message, and the Mac then reconnects with a new handshake.
+    - The Mac reports requests lost with their connection, and `SigningQueue.listen(to:)` fails them at once instead of waiting 45 s.
+    - `probe --reconnect` now really closes the connection.
+    - `WakeLog` records nothing in Release builds.
+  - `fix/phone-unpair-notifications` (made from `fix/bluetooth-relaunch`):
+    - Forget a paired Mac from Settings.
+    - Notification permission is checked each time the app opens, and Settings warns when it is off.
+    - The notification shows the time the request expires.
+  - `fix/agent-hardening`:
+    - The Mac refuses pairing files or folders that another user could write, symbolic links, oversized files, and identity keys that are not on the curve.
+    - Ctrl-C on `ssh` cancels the request and tells the phone.
+    - A cancel is sent before the next request.
+    - `pair` needs `--replace` to replace an already-paired phone.
+  - New tests for each fix. With all four branches merged together: 168 protocol tests and 66 Mac tests pass, and the iOS app builds for the simulator and for a device (Release).
+- **Decision:** Modified, still to be reviewed. Choices the team should confirm:
+  - `channelReset` is not authenticated; it can only force a reconnect.
+  - The `link-state` Keychain item uses `AfterFirstUnlock` and holds public keys only. It exists because the `complete`-protected file cannot be read while the phone is locked.
+  - The replay cache refuses new hellos when full.
+  - A request lost with its connection fails immediately; it is not retried.
+  - Not done: pairing a new Mac from an already-paired phone, which has no screen yet; the low-severity review findings.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of `SecureChannel.swift` (`RecentHelloNonces`, the class change), `ChannelSessions.swift`, `LinkStateStore.swift`, `PairingStore.swift` (`AgentFolder.read`), `SecurePhoneLink.swift` and `AgentSocket.swift` (`waitFor`, `clientState`);
+  - that the Keychain attributes in `LinkStateStore` are right and the item can be read while the phone is locked, on the iPhone 14 Pro;
+  - the BLE wake-up test (`docs/BLE_WAKE_TEST.md`) after these fixes, including the first request after a relaunch;
+  - Ctrl-C on a real `ssh` closes the phone's prompt;
+  - Forget Mac and the notification warning, on a device;
+  - nothing ran on hardware; the assistant only ran the Swift tests and the Xcode builds.
+- **Commit / PR:** `fix/secure-channel-hardening` (719503c), `fix/bluetooth-relaunch` (fb797c2), `fix/phone-unpair-notifications` (fc4bc26), `fix/agent-hardening` (140cff7).
