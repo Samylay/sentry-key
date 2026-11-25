@@ -1,0 +1,15 @@
+# Gitleaks configuration for SentryKey: the default rules, plus one
+# exception.
+title = "SentryKey"
+
+[extend]
+useDefault = true
+
+# The generic key rule takes a Swift declaration such as
+#   let ephemeralKey: P256.KeyAgreement.PrivateKey
+# for a secret, because of the word "key" followed by a long token. The
+# token is a CryptoKit type name. Only these exact names are let through.
+[[allowlists]]
+description = "CryptoKit type names are not secrets"
+regexTarget = "secret"
+regexes = ['''^P256\.(Signing|KeyAgreement)\.PrivateKey$''']

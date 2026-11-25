@@ -487,3 +487,29 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that nothing temporary is missing from section 2: the list comes from comments and READMEs, so undocumented shortcuts are not in it;
   - the distribution section: the statements about the paid developer program and notarization were written from the assistant's knowledge, not checked against Apple's current documentation.
 - **Commit / PR:** pull request #11
+
+### P-021 · 2026-11-24 · Secure channel: handshake and AES-GCM messages
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Build work package B of the J3 plan (P-017): the secure channel between the Mac and the phone, in the shared package.
+- **Prompt (verbatim):** "tu peux commencer partie B du plan?"
+- **Output (summary):**
+  - `SentryKeyProtocol/Sources/SentryKeyProtocol/Channel/HandshakeMessages.swift`: `MacHello` and `PhoneHello`, their encoding, strict parsing, and the exact bytes each side signs. No cryptography, so it builds on Linux.
+  - `Channel/SecureChannel.swift` (CryptoKit): `MacHandshake`, `PhoneHandshake` and `SecureChannel`. Ephemeral P-256 ECDH signed by the identity keys, HKDF-SHA256 with the two nonces as salt, one AES-256-GCM key per direction, a counter used as the nonce and checked strictly, a timestamp on every message, and a channel that stays closed after any failure. Identity keys come through an `IdentitySigner` protocol.
+  - 35 new tests (123 in the package): every altered byte of both handshake messages and of a sealed message is refused, as are a stranger, a hello meant for another phone, an answer from another connection or another phone, an old or future timestamp, an ephemeral key not on the curve, a replayed, reordered or reflected message, every truncation, an oversized message, and a counter about to wrap.
+  - `.gitleaks.toml`: the default rules plus one exception. The secret scanner flagged `private let ephemeralKey: P256.KeyAgreement.PrivateKey`, taking the type name for a secret, as it had in P-018. The exception lets through those two exact CryptoKit type names and nothing else. Checked that a fake secret is still reported with this configuration.
+  - Checked on Linux with the Docker command from the package README: the package builds with Swift 6.2 and 96 tests pass, the CryptoKit-dependent ones being compiled out.
+- **Decision:** Accepted as a first version. `docs/FLOWS.md` lists several points the architecture does not specify. The assistant chose, and these are proposals for the team, not decisions:
+  - the Mac sends its handshake message first;
+  - what each signature covers (see the package README);
+  - the phone relies on the signed timestamp for freshness, with a 5-minute tolerance, rather than on a third handshake message;
+  - `MacHello` carries the Mac's identity fingerprint in clear.
+  `docs/ARCHITECTURE.md` was not changed. Nothing uses the channel yet: wiring it to Bluetooth and to Secure Enclave keys is work package D.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of `SecureChannel.swift` and `HandshakeMessages.swift` by the security architect: this is the project's main crypto code;
+  - the four choices above, then record the agreed ones in `docs/ARCHITECTURE.md`;
+  - the CryptoKit calls against Apple's documentation: `hkdfDerivedSymmetricKey`, `AES.GCM.seal` and `open` with an explicit nonce, and that `P256.KeyAgreement.PublicKey(x963Representation:)` rejects points off the curve (one test relies on it);
+  - with real Secure Enclave keys on both devices, which could not be tried here;
+  - that the team accepts the exception added to the secret scanner in `.gitleaks.toml`.
+- **Commit / PR:** branch `feature/secure-channel`, stacked on pull request #11
