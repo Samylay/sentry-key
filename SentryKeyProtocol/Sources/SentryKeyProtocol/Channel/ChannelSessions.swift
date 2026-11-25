@@ -45,7 +45,7 @@ public struct MacChannelSession {
             state = .open(try handshake.finish(with: answer))
             return nil
 
-        case .open(var channel):
+        case .open(let channel):
             state = .closed
             let body = try channel.open(message, now: now)
             guard let response = try? PhoneResponse.parse(body: body) else { throw .malformed }
@@ -65,7 +65,7 @@ public struct MacChannelSession {
     /// Not public: the Mac only ever sends requests. Tests use it to send
     /// the phone something else under valid encryption.
     mutating func sealBody(_ body: [UInt8], now: Date) throws(ChannelError) -> [UInt8] {
-        guard case .open(var channel) = state else { throw .closed }
+        guard case .open(let channel) = state else { throw .closed }
         state = .closed
         let sealed = try channel.seal(body, now: now)
         state = .open(channel)
@@ -92,13 +92,21 @@ public struct PhoneChannelSession {
 
     private let identity: any IdentitySigner
     private let pairedMacKey: @Sendable ([UInt8]) -> [UInt8]?
+    private let recentHellos: RecentHelloNonces
     private var state = State.waitingForHello
 
     /// - Parameter pairedMacKey: the identity public key of the paired Mac
     ///   with this fingerprint, or nil if there is none.
-    public init(identity: any IdentitySigner, pairedMacKey: @escaping @Sendable ([UInt8]) -> [UInt8]?) {
+    /// - Parameter recentHellos: one instance for the whole app, shared by
+    ///   every session, so a hello replayed on another connection is seen.
+    public init(
+        identity: any IdentitySigner,
+        pairedMacKey: @escaping @Sendable ([UInt8]) -> [UInt8]?,
+        recentHellos: RecentHelloNonces
+    ) {
         self.identity = identity
         self.pairedMacKey = pairedMacKey
+        self.recentHellos = recentHellos
     }
 
     /// Handles one message from the Mac. After any error the session is
@@ -109,13 +117,14 @@ public struct PhoneChannelSession {
             state = .closed
             guard let hello = try? MacHello.parse(body: message) else { throw .malformed }
             let accepted = try PhoneHandshake.accept(
-                hello, identity: identity, pairedMacKey: pairedMacKey, now: now
+                hello, identity: identity, pairedMacKey: pairedMacKey,
+                recentHellos: recentHellos, now: now
             )
             macFingerprint = accepted.macFingerprint
             state = .open(accepted.channel)
             return .handshakeAnswer(accepted.answer.encoded())
 
-        case .open(var channel):
+        case .open(let channel):
             state = .closed
             let body = try channel.open(message, now: now)
             guard let request = try? PhoneRequest.parse(body: body) else { throw .malformed }
@@ -129,7 +138,7 @@ public struct PhoneChannelSession {
 
     /// Encrypts an answer for the Mac. Only once the session is open.
     public mutating func seal(_ response: PhoneResponse, now: Date) throws(ChannelError) -> [UInt8] {
-        guard case .open(var channel) = state else { throw .closed }
+        guard case .open(let channel) = state else { throw .closed }
         state = .closed
         let sealed = try channel.seal(response.encoded(), now: now)
         state = .open(channel)

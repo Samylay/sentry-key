@@ -27,10 +27,12 @@ import Foundation
 //
 // The phone's signature covers the Mac's fresh nonce, so the Mac knows the
 // phone is live. The Mac's signature cannot cover the phone's nonce (it is
-// sent first), so the phone relies on the signed timestamp: a recorded
-// MacHello is refused once it is older than the clock tolerance. Within
-// that time, replaying it gets an answer but no channel, because sealing a
-// message needs the ephemeral private key, which only the Mac had.
+// sent first), so the phone relies on two checks: the signed timestamp
+// refuses a recorded MacHello once it is older than the clock tolerance,
+// and `RecentHelloNonces` refuses one it has already accepted within that
+// time. Even without the second check a replay could not open a channel
+// (sealing needs the ephemeral private key, which only the Mac had), but it
+// would make the phone sign and could knock out a live connection.
 
 public enum ChannelError: Error, Equatable {
     /// The message is not well formed.
@@ -50,6 +52,8 @@ public enum ChannelError: Error, Equatable {
     case messageTooLarge
     /// An earlier message failed. The connection must be dropped.
     case closed
+    /// This MacHello was already accepted: a recording played back.
+    case replayedHello
 }
 
 /// An identity key that can sign: a Secure Enclave key on a device, an
@@ -69,13 +73,18 @@ public enum IdentityFingerprint {
 }
 
 /// The Mac's side of the handshake.
-public struct MacHandshake {
+///
+/// A class, and `finish` succeeds only once: two channels from the same
+/// handshake would have the same keys and both start at counter 0, so they
+/// would reuse AES-GCM nonces.
+public final class MacHandshake {
     /// The message to send to the phone.
     public let hello: MacHello
 
     private let ephemeralKey: P256.KeyAgreement.PrivateKey
     private let macFingerprint: [UInt8]
     private let phoneIdentityKey: [UInt8]
+    private var isFinished = false
 
     /// - Parameter phoneIdentityKey: the phone's identity public key,
     ///   recorded at pairing.
@@ -104,7 +113,9 @@ public struct MacHandshake {
     }
 
     /// Checks the phone's answer and opens the channel.
+    /// Throws `.closed` if it already succeeded once.
     public func finish(with answer: PhoneHello) throws(ChannelError) -> SecureChannel {
+        guard !isFinished else { throw .closed }
         let phoneFingerprint = IdentityFingerprint.of(publicKey: phoneIdentityKey)
         let signed = PhoneHello.signedBytes(
             version: hello.version,
@@ -115,11 +126,13 @@ public struct MacHandshake {
         guard isValid(signature: answer.signature, over: signed, identityKey: phoneIdentityKey) else {
             throw .invalidSignature
         }
-        return try SecureChannel(
+        let channel = try SecureChannel(
             role: .mac, ephemeralKey: ephemeralKey, peerEphemeralKey: answer.ephemeralKey,
             macNonce: hello.nonce, phoneNonce: answer.nonce,
             macFingerprint: macFingerprint, phoneFingerprint: phoneFingerprint
         )
+        isFinished = true
+        return channel
     }
 
     static func randomNonce() -> [UInt8] {
@@ -147,10 +160,13 @@ public enum PhoneHandshake {
     ///
     /// - Parameter pairedMacKey: the identity public key of the paired Mac
     ///   with this fingerprint, or nil if there is none.
+    /// - Parameter recentHellos: the nonces of hellos already accepted. One
+    ///   instance for the whole app, shared by every connection.
     public static func accept(
         _ hello: MacHello,
         identity: any IdentitySigner,
         pairedMacKey: ([UInt8]) -> [UInt8]?,
+        recentHellos: RecentHelloNonces,
         now: Date
     ) throws(ChannelError) -> Accepted {
         guard hello.version == ChannelLimits.version else { throw .malformed }
@@ -170,6 +186,11 @@ public enum PhoneHandshake {
         }
         // After the signature: an unsigned timestamp proves nothing.
         guard isWithinTolerance(hello.timestamp, of: now) else { throw .timestampOutOfWindow }
+        // Last: only a genuine, current hello is recorded, so a stranger
+        // cannot fill the cache.
+        guard recentHellos.insertIfNew(hello.nonce, timestamp: hello.timestamp, now: now) else {
+            throw .replayedHello
+        }
 
         let ephemeralKey = P256.KeyAgreement.PrivateKey()
         let ephemeralPublic = Array(ephemeralKey.publicKey.x963Representation)
@@ -206,7 +227,11 @@ public enum PhoneHandshake {
 /// author. Each key counts its messages: the count is the AES-GCM nonce,
 /// which therefore never repeats, and the receiver only accepts the next
 /// count, so a message cannot be replayed, reordered or silently dropped.
-public struct SecureChannel {
+///
+/// A class, not a struct: a copy of a struct would carry its own counter,
+/// and two copies sealing with the same key would reuse an AES-GCM nonce,
+/// which breaks AES-GCM. Every holder of a class shares the one counter.
+public final class SecureChannel {
     enum Role {
         case mac
         case phone
@@ -271,7 +296,7 @@ public struct SecureChannel {
     }
 
     /// Encrypts one message for the other side.
-    public mutating func seal(_ plaintext: [UInt8], now: Date) throws(ChannelError) -> [UInt8] {
+    public func seal(_ plaintext: [UInt8], now: Date) throws(ChannelError) -> [UInt8] {
         guard !isClosed else { throw .closed }
         guard plaintext.count <= Self.maxPlaintextLength else { throw .messageTooLarge }
         // The last count is never used, so the counter cannot wrap and
@@ -301,7 +326,7 @@ public struct SecureChannel {
     /// Checks and decrypts one received message. After any failure the
     /// channel is closed: the caller drops the connection, and a new one
     /// starts with a new handshake.
-    public mutating func open(_ message: [UInt8], now: Date) throws(ChannelError) -> [UInt8] {
+    public func open(_ message: [UInt8], now: Date) throws(ChannelError) -> [UInt8] {
         guard !isClosed else { throw .closed }
         do {
             return try openChecked(message, now: now)
@@ -311,7 +336,7 @@ public struct SecureChannel {
         }
     }
 
-    private mutating func openChecked(_ message: [UInt8], now: Date) throws(ChannelError) -> [UInt8] {
+    private func openChecked(_ message: [UInt8], now: Date) throws(ChannelError) -> [UInt8] {
         guard message.count >= Self.headerLength + Self.tagLength else { throw .malformed }
         guard message.count <= Self.headerLength + Self.maxPlaintextLength + Self.tagLength else {
             throw .messageTooLarge
@@ -348,6 +373,44 @@ public struct SecureChannel {
         bytes.writeUInt32(0)
         bytes.writeUInt64(counter)
         return try AES.GCM.Nonce(data: Data(bytes.bytes))
+    }
+}
+
+/// The nonces of the MacHellos the phone accepted recently, so that a
+/// recording of one is refused (ARCHITECTURE.md, Channel).
+///
+/// A nonce only needs to be remembered while its hello could still pass
+/// the timestamp check: until `timestamp + clockToleranceSeconds`. Only
+/// hellos with a valid Mac signature are recorded, so the cache grows only
+/// as fast as the paired Mac connects. If it is ever full, new hellos are
+/// refused rather than old nonces forgotten: failing closed.
+///
+/// NEEDS LINE-BY-LINE HUMAN REVIEW (replay protection).
+public final class RecentHelloNonces: @unchecked Sendable {
+    /// Far more connections than a Mac makes in ten minutes.
+    public static let capacity = 1024
+
+    // @unchecked Sendable: every access to `seen` holds `lock`.
+    private let lock = NSLock()
+    /// Nonce to the timestamp of the hello that carried it.
+    private var seen: [[UInt8]: UInt64] = [:]
+
+    public init() {}
+
+    /// Records `nonce`. False if it is already recorded, or if the cache
+    /// is full.
+    func insertIfNew(_ nonce: [UInt8], timestamp: UInt64, now: Date) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = UInt64(max(0, now.timeIntervalSince1970))
+        // Forget nonces whose hello the timestamp check now refuses anyway.
+        // Written to avoid overflow: timestamp + tolerance could wrap.
+        seen = seen.filter { _, stamp in
+            current <= stamp || current - stamp <= ChannelLimits.clockToleranceSeconds
+        }
+        guard seen[nonce] == nil, seen.count < Self.capacity else { return false }
+        seen[nonce] = timestamp
+        return true
     }
 }
 

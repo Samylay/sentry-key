@@ -22,6 +22,8 @@ public final class LoopbackPhoneConnector: PhoneConnector {
     private let pairedMacKey: @Sendable ([UInt8]) -> [UInt8]?
     private let answer: @Sendable (PhoneRequest) async -> PhoneResponse?
     private let now: @Sendable () -> Date
+    /// Shared by every connection, as on the real phone.
+    private let recentHellos = RecentHelloNonces()
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     /// - Parameters:
@@ -60,7 +62,9 @@ public final class LoopbackPhoneConnector: PhoneConnector {
 
     public func connect() async throws -> any PhoneConnection {
         let connection = LoopbackPhoneConnection(
-            session: PhoneChannelSession(identity: phoneIdentity, pairedMacKey: pairedMacKey),
+            session: PhoneChannelSession(
+                identity: phoneIdentity, pairedMacKey: pairedMacKey, recentHellos: recentHellos
+            ),
             now: now, answer: answer
         )
         let isReachable = state.withLock { state -> Bool in

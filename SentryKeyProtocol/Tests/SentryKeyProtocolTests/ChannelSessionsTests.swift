@@ -27,7 +27,7 @@ struct ChannelSessionsTests {
         let macKey = mac.publicKey
         return (
             try MacChannelSession(identity: mac, phoneIdentityKey: phone.publicKey, now: now),
-            PhoneChannelSession(identity: phone, pairedMacKey: { _ in macKey })
+            PhoneChannelSession(identity: phone, pairedMacKey: { _ in macKey }, recentHellos: RecentHelloNonces())
         )
     }
 
@@ -84,9 +84,24 @@ struct ChannelSessionsTests {
         #expect(throws: ChannelError.malformed) { try phoneSession.receive(request.encoded(), now: now) }
     }
 
+    @Test func phoneRefusesAHelloReplayedOnAnotherConnection() throws {
+        let macKey = mac.publicKey
+        let shared = RecentHelloNonces()
+        let macSession = try MacChannelSession(identity: mac, phoneIdentityKey: phone.publicKey, now: now)
+        var first = PhoneChannelSession(identity: phone, pairedMacKey: { _ in macKey }, recentHellos: shared)
+        var second = PhoneChannelSession(identity: phone, pairedMacKey: { _ in macKey }, recentHellos: shared)
+        _ = try first.receive(macSession.hello, now: now)
+
+        // A device in range plays the recorded hello on its own connection.
+        #expect(throws: ChannelError.replayedHello) { try second.receive(macSession.hello, now: now) }
+        #expect(second.macFingerprint == nil)
+    }
+
     @Test func phoneClosesAfterARefusedHello() throws {
         var (macSession, _) = try makeSessions()
-        var strangerToThisMac = PhoneChannelSession(identity: phone, pairedMacKey: { _ in nil })
+        var strangerToThisMac = PhoneChannelSession(
+            identity: phone, pairedMacKey: { _ in nil }, recentHellos: RecentHelloNonces()
+        )
 
         #expect(throws: ChannelError.unknownPeer) { try strangerToThisMac.receive(macSession.hello, now: now) }
         // A second attempt on the same connection is not even looked at.
