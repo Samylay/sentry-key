@@ -25,6 +25,12 @@ public enum TransportMessage: Equatable, Sendable {
     case pairingConfirmation([UInt8])
     /// Either way: a handshake message or a sealed message of the channel.
     case channel([UInt8])
+    /// Phone to Mac: "I have no channel with you, start a new handshake."
+    /// Sent when the phone refuses a channel message, typically after iOS
+    /// relaunched the app and its sessions were lost. Not authenticated:
+    /// anyone in range could send it, but all it can do is make the Mac
+    /// drop its connection and reconnect, which jamming the radio does too.
+    case channelReset
 
     /// Longest message accepted from the radio: a sealed message of the
     /// largest size, with its header, tag and kind byte.
@@ -34,6 +40,7 @@ public enum TransportMessage: Equatable, Sendable {
         case pairingRequest = 1
         case pairingConfirmation = 2
         case channel = 3
+        case channelReset = 4
     }
 
     /// The message without a length prefix: `Framing` adds one when it
@@ -43,6 +50,7 @@ public enum TransportMessage: Equatable, Sendable {
         case .pairingRequest(let body): [Kind.pairingRequest.rawValue] + body
         case .pairingConfirmation(let body): [Kind.pairingConfirmation.rawValue] + body
         case .channel(let body): [Kind.channel.rawValue] + body
+        case .channelReset: [Kind.channelReset.rawValue]
         }
     }
 
@@ -54,6 +62,9 @@ public enum TransportMessage: Equatable, Sendable {
         case .pairingRequest: return .pairingRequest(body)
         case .pairingConfirmation: return .pairingConfirmation(body)
         case .channel: return .channel(body)
+        case .channelReset:
+            guard body.isEmpty else { throw WireError.unexpectedValue("channel reset with a body") }
+            return .channelReset
         case nil: throw WireError.unexpectedValue("transport message kind \(first)")
         }
     }

@@ -101,6 +101,22 @@ public actor SigningQueue {
         }
     }
 
+    /// The connection that carried this request ended before the phone
+    /// answered: no answer can come. Ignored if it is no longer in progress.
+    public func requestLost(_ id: RequestID) {
+        guard inFlight?.id == id else { return }
+        resolve(.phoneUnreachable)
+    }
+
+    /// Passes the link's answers and lost requests to this queue, until
+    /// both streams end.
+    public func listen(to link: SecurePhoneLink) async {
+        await withDiscardingTaskGroup { group in
+            group.addTask { for await response in link.responses { await self.deliver(response) } }
+            group.addTask { for await id in link.lostRequests { await self.requestLost(id) } }
+        }
+    }
+
     private func expire(_ id: RequestID) async {
         guard inFlight?.id == id else { return }
         resolve(.timedOut)

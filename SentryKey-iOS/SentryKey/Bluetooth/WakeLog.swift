@@ -10,7 +10,9 @@ import UIKit
 /// See `docs/BLE_WAKE_TEST.md`.
 ///
 /// Event names and times only: no key, no server, no user name. It is
-/// shown in Settings in Debug builds.
+/// shown in Settings in Debug builds, and records nothing in a Release
+/// build: its file has weaker protection than CLAUDE.md asks of the app's
+/// files, which is acceptable for a test tool only.
 @MainActor
 @Observable
 final class WakeLog {
@@ -32,15 +34,21 @@ final class WakeLog {
     }
 
     private init() {
+        #if DEBUG
         entries = (try? JSONDecoder().decode([Entry].self, from: Data(contentsOf: Self.url))) ?? []
+        #else
+        entries = []
+        #endif
     }
 
     func record(_ event: String) {
+        #if DEBUG
         entries.append(Entry(date: .now, event: event, appState: Self.currentAppState()))
         if entries.count > Self.maxEntries {
             entries.removeFirst(entries.count - Self.maxEntries)
         }
         save()
+        #endif
     }
 
     func clear() {

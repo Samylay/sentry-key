@@ -155,6 +155,56 @@ struct SecurePhoneLinkTests {
         #expect(await queue.sign(keyBlob: [1], data: [3], bind: nil) == .refused(.deniedByUser))
     }
 
+    @Test func failsTheRequestAtOnceWhenTheConnectionDropsBeforeTheAnswer() async {
+        // The phone receives the request, then goes out of range without
+        // answering. The queue's own timeout never fires in this test.
+        let (arrivals, arrived) = AsyncStream<Void>.makeStream()
+        let phone = LoopbackPhoneConnector(
+            phoneIdentity: phoneIdentity,
+            pairedMacKey: { [macIdentity] _ in macIdentity.publicKey },
+            answer: { _ in
+                arrived.yield()
+                return nil
+            }
+        )
+        let link = makeLink(to: phone)
+        let queue = SigningQueue(link: link, waitForTimeout: ManualTimeout().wait)
+        let pump = Task { await queue.listen(to: link) }
+        defer { pump.cancel() }
+
+        async let outcome = queue.sign(keyBlob: [1], data: [2], bind: nil)
+        for await _ in arrivals { break }
+        await phone.dropConnections()
+
+        #expect(await outcome == .phoneUnreachable)
+    }
+
+    @Test func anAnsweredRequestIsNotReportedLostWhenTheConnectionDrops() async throws {
+        // Answers request 0 only; request 1 stays unanswered.
+        let phone = LoopbackPhoneConnector(
+            phoneIdentity: phoneIdentity,
+            pairedMacKey: { [macIdentity] _ in macIdentity.publicKey },
+            answer: { request in
+                guard request.id == id(0), case .sign = request else { return nil }
+                return PhoneResponse(id: request.id, outcome: .refused(.deniedByUser))
+            }
+        )
+        let link = makeLink(to: phone)
+        try await link.send(request)
+        _ = await nextResponse(from: link)
+
+        await phone.dropConnections()
+        // Something to compare with: a request that really is lost.
+        try await link.send(.sign(id: id(1), keyBlob: [1], data: [2], bind: nil))
+        await phone.dropConnections()
+
+        // The first loss reported is request 1: request 0 had its answer.
+        for await lost in link.lostRequests {
+            #expect(lost == id(1))
+            break
+        }
+    }
+
     @Test func reportsAnUnreachablePhoneThroughTheQueue() async {
         let phone = makePhone()
         phone.setReachable(false)

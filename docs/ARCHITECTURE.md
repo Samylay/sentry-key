@@ -49,6 +49,10 @@ All Apple frameworks. **No third-party dependencies.**
 
 Keys are never reused across roles. The two devices only ever share **public** keys, exchanged once at pairing. Nothing syncs through iCloud: every Keychain item is `ThisDeviceOnly`.
 
+**Readable while locked.** The phone also keeps a Keychain item `link-state` (`AfterFirstUnlockThisDeviceOnly`, not synchronized). It holds the paired Macs' identity public keys and a copy of the SSH public key blob, and no secret. When iOS relaunches the app in the background for a Bluetooth event with the phone locked, the app's file (`complete` protection) cannot be read. This item lets the app start Bluetooth, run the handshake and check the request anyway. Server names stay in the file and are shown once the user unlocks to answer.
+
+**Lost sessions.** Channel keys live in memory. When the phone refuses a channel message, for example after iOS relaunched the app and the session was lost, it answers with an unauthenticated `channelReset` transport message. The Mac then drops its connection, reports the request in flight as unreachable at once, and does a new handshake for the next request. A stranger sending `channelReset` can only cause such a reconnection, which jamming the radio also achieves.
+
 **Recovery is mandatory.** A `biometryCurrentSet` key is destroyed if Face ID is re-enrolled, and it is lost with the phone. Setup therefore includes the recovery key and a key registry on the Mac that lists which keys are installed on which servers, so keys can be revoked. See [Recovery](#recovery-j4).
 
 ## Modules

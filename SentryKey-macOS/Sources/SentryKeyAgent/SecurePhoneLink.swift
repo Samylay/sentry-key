@@ -26,11 +26,18 @@ public actor SecurePhoneLink: PhoneLink {
         /// Tells this connection apart from an earlier one that a reader
         /// task may still be finishing.
         let number: Int
+        /// Sign requests sent on this connection and not answered yet. If
+        /// the connection ends, their answer can never come.
+        var unanswered: Set<RequestID> = []
     }
 
     /// Answers from the phone, to pass to `SigningQueue.deliver`.
     public nonisolated let responses: AsyncStream<PhoneResponse>
     private let answers: AsyncStream<PhoneResponse>.Continuation
+    /// Requests whose connection ended before the phone answered, to pass
+    /// to `SigningQueue.requestLost`. `SigningQueue.listen(to:)` does both.
+    public nonisolated let lostRequests: AsyncStream<RequestID>
+    private let losses: AsyncStream<RequestID>.Continuation
 
     private let identity: any IdentitySigner
     private let phoneIdentityKey: [UInt8]
@@ -64,6 +71,7 @@ public actor SecurePhoneLink: PhoneLink {
         self.waitForHandshakeTimeout = waitForHandshakeTimeout
         // The queue sends one sign request at a time, so answers never pile up.
         (responses, answers) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(4))
+        (lostRequests, losses) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(4))
     }
 
     public func send(_ request: PhoneRequest) async throws {
@@ -98,9 +106,23 @@ public actor SecurePhoneLink: PhoneLink {
     private func sendOnOpenConnection(_ request: PhoneRequest) async throws {
         guard var current = open else { throw PhoneLinkError.connectionLost }
         let sealed = try current.session.seal(request, now: now())
-        // Stored before sending: the counter has moved, whatever happens next.
+        // Recorded before sending: the counter has moved, whatever happens
+        // next, and the connection may end while the send is under way.
+        switch request {
+        case .sign(let id, _, _, _): current.unanswered.insert(id)
+        case .cancel(let id): current.unanswered.remove(id)
+        }
         open = current
-        try await current.connection.send(sealed)
+        do {
+            try await current.connection.send(sealed)
+        } catch {
+            // Not delivered: `send` retries it on a new connection, so it
+            // is not lost with this one.
+            if case .sign(let id, _, _, _) = request, open?.number == current.number {
+                open?.unanswered.remove(id)
+            }
+            throw error
+        }
     }
 
     private func connect() async throws {
@@ -145,25 +167,44 @@ public actor SecurePhoneLink: PhoneLink {
         guard var current = open, current.number == number else { return false }
         do {
             let response = try current.session.receive(message, now: now())
+            if let response {
+                current.unanswered.remove(response.id)
+                answers.yield(response)
+            }
             open = current
-            if let response { answers.yield(response) }
             return true
         } catch {
             return false
         }
     }
 
+    /// Closes the open connection, if any. The next request starts a new
+    /// one with a new handshake.
+    public func close() async {
+        await takeTurn()
+        defer { passTurn() }
+        await dropConnection()
+    }
+
     private func connectionEnded(_ number: Int) async {
         guard let current = open, current.number == number else { return }
         open = nil
+        reportLost(current)
         await current.connection.close()
     }
 
     private func dropConnection() async {
         guard let current = open else { return }
         open = nil
+        reportLost(current)
         current.reader.cancel()
         await current.connection.close()
+    }
+
+    /// The phone can no longer answer these: the queue fails them now
+    /// instead of waiting for its timeout.
+    private func reportLost(_ connection: OpenConnection) {
+        for id in connection.unanswered { losses.yield(id) }
     }
 
     private func takeTurn() async {

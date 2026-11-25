@@ -11,7 +11,9 @@ struct PendingRequest: Identifiable {
     let approval: LoginApproval
     let hostFingerprint: String
     /// The name the user gave this server earlier, or nil the first time.
-    let knownName: String?
+    /// Filled in late if the request arrived while the phone was locked
+    /// and the names could not be read yet.
+    var knownName: String?
     let dataToSign: [UInt8]
     let receivedAt: Date
     let expiresAt: Date
@@ -90,6 +92,7 @@ final class AppModel {
     private(set) var pairedMacKeys: [[UInt8]] = []
     private let notifier = ApprovalNotifier()
     private let storage = Storage()
+    private let linkStateStore = LinkStateStore()
     private var ourKeyBlob: [UInt8]?
     private var limiter = PromptRateLimiter()
     /// False while the saved state cannot be read (phone locked at launch).
@@ -99,7 +102,27 @@ final class AppModel {
     init() {
         knownHosts = KnownHosts()
         phase = .onboarding
+        loadLinkState()
         reloadIfNeeded()
+    }
+
+    /// True once a Mac has confirmed pairing. Readable with the phone
+    /// locked, unlike `phase`, which needs the saved file.
+    var hasPairedMac: Bool { !pairedMacKeys.isEmpty }
+
+    /// Reads the paired Macs and the SSH public key from the Keychain. Works
+    /// with the phone locked, as long as it was unlocked once since it
+    /// started, so a request can reach the user from a background launch.
+    private func loadLinkState() {
+        guard let state = try? linkStateStore.load() else { return }
+        pairedMacKeys = state.pairedMacKeys
+        ourKeyBlob = state.sshKeyBlob
+    }
+
+    private func saveLinkState() {
+        // Failing to save only means a locked phone cannot answer until it
+        // is opened once: the file still has everything.
+        try? linkStateStore.save(LinkStateStore.State(pairedMacKeys: pairedMacKeys, sshKeyBlob: ourKeyBlob))
     }
 
     /// Reads the saved state if that has not worked yet. Called at launch
@@ -110,9 +133,20 @@ final class AppModel {
         case .saved(let saved):
             storageLoaded = true
             knownHosts = saved.knownHosts
-            pairedMacKeys = saved.pairedMacKeys ?? []
+            // The Keychain copy wins. The file's copy only matters for a
+            // phone paired before the Keychain copy existed.
+            if pairedMacKeys.isEmpty, let fromFile = saved.pairedMacKeys, !fromFile.isEmpty {
+                pairedMacKeys = fromFile
+                saveLinkState()
+            }
             phase = saved.isPaired ? .paired : .onboarding
             if saved.isPaired { loadKey() }
+            // A request that arrived while locked was shown without the
+            // server's name: look it up now.
+            if var request = pending, request.knownName == nil {
+                request.knownName = knownHosts.name(forFingerprint: request.hostFingerprint)
+                pending = request
+            }
         case .none:
             storageLoaded = true
         case .unavailable:
@@ -166,6 +200,7 @@ final class AppModel {
         if !pairedMacKeys.contains(pairing.macIdentityKey) {
             pairedMacKeys.append(pairing.macIdentityKey)
         }
+        saveLinkState()
         self.pairing = nil
         pairingRequest = nil
         pairingStage = .confirmed
@@ -212,10 +247,14 @@ final class AppModel {
                 keyFingerprint = nil
                 phase = .onboarding
                 save()
+                saveLinkState()
                 errorMessage = "This iPhone no longer has its SSH key. Pair again, then install the new public key on your servers."
                 return
             }
-            ourKeyBlob = blob
+            if ourKeyBlob != blob {
+                ourKeyBlob = blob
+                saveLinkState()
+            }
             keyFingerprint = Fingerprint.of(blob)
             publicKeyLine = try OpenSSHPublicKey.line(keyBlob: blob, comment: "sentrykey")
         } catch {

@@ -36,8 +36,20 @@ struct BluetoothPhoneConnection: PhoneConnection {
 
     func receive() async throws -> [UInt8] {
         for await message in link.incoming {
-            // Pairing messages have no place on an established link.
-            if case .channel(let body) = message { return body }
+            switch message {
+            case .channel(let body):
+                return body
+            case .channelReset:
+                // The phone has no session for us (its app was relaunched,
+                // or it refused our last message). Ending the connection
+                // makes `SecurePhoneLink` fail the request in flight at once
+                // and start the next one with a new handshake.
+                link.close()
+                throw PhoneLinkError.connectionLost
+            case .pairingRequest, .pairingConfirmation:
+                // Pairing messages have no place on an established link.
+                continue
+            }
         }
         throw PhoneLinkError.connectionLost
     }
