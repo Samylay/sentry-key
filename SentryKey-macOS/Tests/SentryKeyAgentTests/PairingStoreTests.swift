@@ -40,6 +40,13 @@ struct PairingStoreTests {
         #expect(reloaded.identity() == AgentIdentity(keyBlob: phone.sshKeyBlob, comment: "sentrykey"))
     }
 
+    @Test func remembersWhichBluetoothDeviceThePhoneIs() throws {
+        let identifier = UUID()
+        try PairingStore(folder: folder).save(try makePhone(), bluetoothIdentifier: identifier)
+
+        #expect(PairingStore(folder: folder).bluetoothIdentifier() == identifier)
+    }
+
     @Test func offersNoKeyBeforePairing() {
         let store = PairingStore(folder: folder)
 

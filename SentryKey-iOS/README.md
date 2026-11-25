@@ -14,8 +14,7 @@ The iPhone side of SentryKey, in SwiftUI with Apple's own controls (Form, List, 
 
 ## Not done yet (J3)
 
-- **Pairing cannot finish yet.** The app reads a real pairing code, creates its two Secure Enclave keys and prepares its request, then waits for the Mac's confirmation. Nothing carries those two messages until the Bluetooth link exists. In Debug builds, **Pair without a Mac (demo)** on the pairing screen creates the SSH key alone, so the demo request can still be tried.
-- **BLE channel.** `AppModel.receive(_:)` takes the Mac's `PhoneRequest` and answers with a `PhoneResponse` carrying the same request identifier, but nothing calls it except the demo, and `sendResponse` goes nowhere. The phone's side of the secure channel exists in the shared package (`PhoneChannelSession`) and is not used by the app yet.
+- **Bluetooth has never been run.** `Bluetooth/BLEPeripheral.swift` and `PhoneLinkController.swift` carry pairing and the secure channel, and build, but no device has exercised them. In Debug builds, **Pair without a Mac (demo)** on the pairing screen creates the SSH key alone, so the demo request can be tried without any of it.
 - **Audit log** with a hash chain (the history is in memory only).
 
 ## Open and build
@@ -23,7 +22,7 @@ The iPhone side of SentryKey, in SwiftUI with Apple's own controls (Form, List, 
 Open `SentryKey-iOS/SentryKey.xcodeproj` in Xcode 16 or later. The project is committed, so there is nothing to create.
 
 - The `SentryKey` folder is a synchronized group: a file added to the folder is part of the target without touching the project.
-- The local package `../SentryKeyProtocol` is already linked, the minimum deployment is iOS 17.0, and the camera and Face ID usage descriptions are set in the build settings.
+- The local package `../SentryKeyProtocol` is already linked, the minimum deployment is iOS 17.0, and the camera, Face ID and Bluetooth usage descriptions are set in the build settings. `Info.plist` adds the `bluetooth-peripheral` background mode, which build settings cannot express.
 - The project file was written by hand and validated with `xcodebuild`, not created from Xcode's template. It has no asset catalog, so the app has no icon yet.
 
 **On the simulator** (no signing needed): pick an iPhone simulator and Run. Only the Welcome and pairing screens work there. The QR scanner is not supported on a simulator, so the Scan button stays disabled, and there is no Secure Enclave to create the key.

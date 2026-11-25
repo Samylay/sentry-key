@@ -177,6 +177,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "SentryKey receives sign-in requests from your Mac over Bluetooth.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SentryKey scans the pairing code shown by your Mac.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "SentryKey asks for Face ID before each signature.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -202,6 +204,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "SentryKey receives sign-in requests from your Mac over Bluetooth.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "SentryKey scans the pairing code shown by your Mac.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "SentryKey asks for Face ID before each signature.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

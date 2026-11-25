@@ -576,3 +576,24 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - a Release build no longer shows "Pair without a Mac";
   - the two Secure Enclave tests are skipped on the CI runner, which has no Secure Enclave: they only run on a real Mac.
 - **Commit / PR:** branch `feature/pairing`, stacked on pull request #14
+
+### P-025 · 2026-11-24 · Bluetooth transport on both devices (work package D)
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Carry pairing and the secure channel over Bluetooth, between the iPhone and the Mac.
+- **Prompt (verbatim):** the same request as P-023 ("tu peux faire 4 PR pour ca? ..."). This entry covers D.
+- **Output (summary):**
+  - `SentryKeyProtocol/.../Transport/TransportMessage.swift`: the service's identifiers and a kind byte separating pairing messages from channel messages. 8 tests, 157 in the package.
+  - iPhone: `Bluetooth/BLEPeripheral.swift` (peripheral, one reassembler per connected device, at most four devices, state restoration) and `PhoneLinkController.swift` (one `PhoneChannelSession` per device, pairing messages, answers routed back to the Mac that asked). The Bluetooth permission text, and an `Info.plist` for the `bluetooth-peripheral` background mode.
+  - Mac: target `SentryKeyBluetooth` with `BluetoothLink` (central), `BluetoothPhoneConnector` (a `PhoneConnector`), `BluetoothPairing`, and a QR code drawn in a terminal. Executable `sentrykey-agent` with `pair` and `run`, using the Mac's Secure Enclave identity key and the pairing store, with its Bluetooth usage text embedded in the binary.
+  - 4 tests for the QR code and the stored Bluetooth identifier, 57 in the agent package.
+- **Decision:** Accepted as untested code, and labelled as such in every file. **None of the Bluetooth code has run**: this Mac cannot be used with the iPhone, and running the agent here would have asked the user for a Bluetooth permission on a managed machine. What was checked: both devices' code compiles, the iPhone app builds in Debug and Release and still launches in the simulator, the generated `Info.plist` carries the background mode, the agent binary contains its usage text, and the development agent's real `ssh` check still passes.
+  One mistake corrected on the way: the background mode was first set through a build setting, which Xcode ignored without a word. It needs a real `Info.plist`.
+- **Human verification:** PENDING: human to complete. This is the entry with the most left to check:
+  - line-by-line review of `BLEPeripheral.swift`, `PhoneLinkController.swift`, `BluetoothLink.swift`, `BluetoothPhone.swift` and `TransportMessage.swift`;
+  - on the iPhone 14 Pro and a Mac: `sentrykey-agent pair`, then `run`, then a real `ssh` login approved with Face ID;
+  - whether macOS grants Bluetooth to the command-line agent;
+  - the CoreBluetooth calls against Apple's documentation, in particular state restoration (`willRestoreState`), the single answer to a batch of writes, and writes with response being acknowledged in order;
+  - that `SentryKeyApp.init` runs when iOS relaunches the app in the background, which the transport relies on.
+- **Commit / PR:** branch `feature/bluetooth-transport`, stacked on pull request #15
