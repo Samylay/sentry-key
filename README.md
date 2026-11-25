@@ -46,11 +46,13 @@ Master 2 group project: *"Make the iPhone a security device"*.
 | Path | Contents |
 |---|---|
 | `SentryKeyProtocol/` | Shared Swift package: SSH wire formats, ssh-agent messages, framing, approval checks. See its README |
-| `SentryKey-iOS/` | iPhone app sources (SwiftUI). Its README explains how to create the Xcode project |
+| `SentryKey-iOS/` | iPhone app (SwiftUI) and its Xcode project. See its README |
+| `SentryKey-macOS/` | Mac agent: the ssh-agent socket and the queue of sign requests, with a stand-in phone for development. See its README |
 | `docs/UI_RESEARCH.md` | Real-app screens studied before designing the iPhone UI |
+| `docs/PRODUCTION_CHECKLIST.md` | Everything that must change before SentryKey could ship: missing parts, temporary code, unmeasured limits, reviews owed |
 | `docs/PROMPT_JOURNAL.md` | Mandatory log of every AI prompt used on the project |
 | `docs/red-team/README.md` | Red team guide: attacker model, BLE primer, attack decision trees |
 | `CONTRIBUTING.md` | Team rules: reviews, AI usage, commits |
 | `.github/pull_request_template.md` | Review checklist applied to every merge |
 
-The iOS app, the macOS agent and the security dossier will be added as the project progresses.
+Still to come: the Bluetooth link, the secure channel, real pairing, and the Mac menu bar app.

@@ -1,0 +1,41 @@
+name: swift-test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: swift test (${{ matrix.package }})
+    # Pinned rather than macos-latest, so a new runner image cannot change
+    # the compiler under an open pull request.
+    runs-on: macos-26
+    timeout-minutes: 15
+    strategy:
+      # One package failing must not hide the result of the other.
+      fail-fast: false
+      matrix:
+        package: [SentryKeyProtocol, SentryKey-macOS]
+    env:
+      PACKAGE: ${{ matrix.package }}
+    steps:
+      # Pinned to a commit: a tag can be moved, a commit cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show the toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Run the tests
+        run: |
+          # A branch cut before a package was added does not have it yet.
+          if [ ! -f "$PACKAGE/Package.swift" ]; then
+            echo "::notice::$PACKAGE is not on this branch: nothing to test."
+            exit 0
+          fi
+          cd "$PACKAGE"
+          swift test
