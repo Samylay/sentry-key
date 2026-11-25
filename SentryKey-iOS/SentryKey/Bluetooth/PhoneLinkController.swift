@@ -36,8 +36,11 @@ final class PhoneLinkController {
         log.record("app launched")
         model.sendPairingRequest = { [weak self] in self?.sendPairingRequestToAll($0) }
         // Bluetooth is only asked for once it has a use: after pairing
-        // started, or at launch when the phone is already paired.
-        if model.phase == .paired { peripheral.start() }
+        // started, or at launch when a Mac is paired. `hasPairedMac` comes
+        // from the Keychain, so it is known even on a background launch
+        // with the phone locked, when `phase` is not (its file is locked).
+        // Starting here is what lets iOS hand over the restored state.
+        if model.phase == .paired || model.hasPairedMac { peripheral.start() }
     }
 
     private func deviceConnected(_ device: UUID) {
@@ -74,7 +77,7 @@ final class PhoneLinkController {
             model.receivePairingConfirmation(confirmation)
         case .channel(let body):
             receivedOnChannel(body, from: device)
-        case .pairingRequest:
+        case .pairingRequest, .channelReset:
             // Only the phone sends these.
             break
         }
@@ -95,11 +98,14 @@ final class PhoneLinkController {
                 model.receive(request)
             }
         } catch {
-            // Refused: a stranger, a replay, an altered message. No answer.
-            // The session is gone, and a paired Mac starts a new one with a
-            // new handshake.
+            // Refused: a stranger, a replay, an altered message, or a Mac
+            // still using a session this app lost when iOS relaunched it.
+            // The session is gone. The reset tells a paired Mac to start a
+            // new handshake now instead of waiting for its timeout; it says
+            // nothing a stranger could use.
             sessions[device] = nil
             log.record("message refused")
+            peripheral.send(TransportMessage.channelReset.encoded(), to: device)
         }
     }
 

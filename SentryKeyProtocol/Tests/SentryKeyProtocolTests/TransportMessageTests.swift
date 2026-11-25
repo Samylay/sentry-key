@@ -8,6 +8,7 @@ struct TransportMessageTests {
         TransportMessage.pairingConfirmation([4, 5]),
         TransportMessage.channel([6, 7, 8, 9]),
         TransportMessage.channel([]),
+        TransportMessage.channelReset,
     ])
     func survivesEncoding(message: TransportMessage) throws {
         #expect(try TransportMessage.parse(message.encoded()) == message)
@@ -19,8 +20,15 @@ struct TransportMessageTests {
             TransportMessage.pairingRequest(body).encoded(),
             TransportMessage.pairingConfirmation(body).encoded(),
             TransportMessage.channel(body).encoded(),
+            TransportMessage.channelReset.encoded(),
         ]
-        #expect(Set(encodings).count == 3)
+        #expect(Set(encodings).count == 4)
+    }
+
+    @Test func aResetWithABodyIsRejected() {
+        #expect(throws: WireError.unexpectedValue("channel reset with a body")) {
+            try TransportMessage.parse([4, 0])
+        }
     }
 
     @Test func anEmptyMessageIsRejected() {

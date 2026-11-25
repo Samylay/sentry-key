@@ -99,25 +99,17 @@ case "probe":
     let interval = probeInterval
     let reconnects = probeReconnects
     Task {
-        @Sendable func makeQueue() -> SigningQueue {
-            let link = SecurePhoneLink(
-                identity: identity, phoneIdentityKey: phone.identityKey,
-                connector: BluetoothPhoneConnector(phoneIdentifier: phoneIdentifier)
-            )
-            let queue = SigningQueue(link: link) { try? await Task.sleep(for: .seconds(15)) }
-            Task {
-                for await response in link.responses {
-                    await queue.deliver(response)
-                }
-            }
-            return queue
-        }
-        var queue = makeQueue()
+        let link = SecurePhoneLink(
+            identity: identity, phoneIdentityKey: phone.identityKey,
+            connector: BluetoothPhoneConnector(phoneIdentifier: phoneIdentifier)
+        )
+        let queue = SigningQueue(link: link) { try? await Task.sleep(for: .seconds(15)) }
+        Task { await queue.listen(to: link) }
         var answered = 0
         for number in 1...count {
-            // A new link drops the connection, so each probe also measures
-            // connecting again and a new handshake.
-            if reconnects, number > 1 { queue = makeQueue() }
+            // Closing the Bluetooth connection makes each probe also
+            // measure connecting again and a new handshake.
+            if reconnects, number > 1 { await link.close() }
             let start = ContinuousClock.now
             let outcome = await queue.sign(keyBlob: phone.sshKeyBlob, data: [0], bind: nil)
             let seconds = Double((ContinuousClock.now - start).components.seconds)
@@ -130,7 +122,7 @@ case "probe":
             case .timedOut:
                 print("probe \(number)/\(count): NO ANSWER after \(time) (connected, phone silent)")
             case .phoneUnreachable:
-                print("probe \(number)/\(count): UNREACHABLE after \(time) (no connection or no handshake)")
+                print("probe \(number)/\(count): UNREACHABLE after \(time) (no connection, no handshake, or connection lost before the answer)")
             default:
                 print("probe \(number)/\(count): unexpected answer \(outcome) after \(time)")
             }
@@ -149,11 +141,7 @@ default:
         connector: BluetoothPhoneConnector(phoneIdentifier: phoneIdentifier)
     )
     let queue = SigningQueue(link: link)
-    Task {
-        for await response in link.responses {
-            await queue.deliver(response)
-        }
-    }
+    Task { await queue.listen(to: link) }
     let path = socketPath ?? folder.path + "/agent.sock"
     let agentSocket = AgentSocket(path: path) {
         // Event kinds only: no host name, user name or key in the output.

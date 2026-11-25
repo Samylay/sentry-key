@@ -74,11 +74,7 @@ private let link = SecurePhoneLink(
     identity: macIdentity, phoneIdentityKey: phoneIdentity.publicKey, connector: connector
 )
 private let queue = SigningQueue(link: link)
-Task {
-    for await response in link.responses {
-        await queue.deliver(response)
-    }
-}
+Task { await queue.listen(to: link) }
 
 private let keys = FixedPublicKeyStore(
     identity: AgentIdentity(keyBlob: phone.publicKeyBlob, comment: "sentrykey-dev")
