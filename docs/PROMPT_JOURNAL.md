@@ -658,3 +658,45 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - the iOS app was not built or tested; nothing ran on the iPhone 14 Pro;
   - the team agrees the rule override was acceptable for the graded process.
 - **Commit / PR:** merge commits on `main` up to `1007707`; this entry is on branch `docs/journal-p028`.
+
+### P-029 · 2026-11-25 · Fix the review findings from P-028
+
+- **Author:** Samylay (repo owner; name to confirm)
+- **Tool / model:** Claude Code (Claude Opus 5.5)
+- **Goal:** Fix the follow-ups found when PRs #10–#18 were reviewed (P-028).
+- **Prompt (verbatim):** "whats lft", then "fix all" after the assistant listed the open findings. During the work: "whats left to do" and "what fixes are you doing".
+- **Output (summary):** four branches, all made from `main` except where noted.
+  - `fix/secure-channel-hardening`:
+    - `SecureChannel` and `MacHandshake` are now classes, and `finish` succeeds only once, so no copy can reuse an AES-GCM nonce.
+    - The phone keeps a shared cache, `RecentHelloNonces`, of the Mac hello nonces it accepted within the clock window, and refuses a replay with `.replayedHello`. When the cache is full it refuses new hellos (fail closed).
+    - ARCHITECTURE.md now says the counter is 64-bit, padded to 96 bits.
+  - `fix/bluetooth-relaunch`:
+    - The paired Mac keys and the SSH public key blob are stored in a Keychain item, `link-state`, readable after first unlock. Bluetooth now starts on a locked background relaunch.
+    - New `channelReset` transport message: the phone sends it when it refuses a channel message, and the Mac then reconnects with a new handshake.
+    - The Mac reports requests lost with their connection, and `SigningQueue.listen(to:)` fails them at once instead of waiting 45 s.
+    - `probe --reconnect` now really closes the connection.
+    - `WakeLog` records nothing in Release builds.
+  - `fix/phone-unpair-notifications` (made from `fix/bluetooth-relaunch`):
+    - Forget a paired Mac from Settings.
+    - Notification permission is checked each time the app opens, and Settings warns when it is off.
+    - The notification shows the time the request expires.
+  - `fix/agent-hardening`:
+    - The Mac refuses pairing files or folders that another user could write, symbolic links, oversized files, and identity keys that are not on the curve.
+    - Ctrl-C on `ssh` cancels the request and tells the phone.
+    - A cancel is sent before the next request.
+    - `pair` needs `--replace` to replace an already-paired phone.
+  - New tests for each fix. With all four branches merged together: 168 protocol tests and 66 Mac tests pass, and the iOS app builds for the simulator and for a device (Release).
+- **Decision:** Modified, still to be reviewed. Choices the team should confirm:
+  - `channelReset` is not authenticated; it can only force a reconnect.
+  - The `link-state` Keychain item uses `AfterFirstUnlock` and holds public keys only. It exists because the `complete`-protected file cannot be read while the phone is locked.
+  - The replay cache refuses new hellos when full.
+  - A request lost with its connection fails immediately; it is not retried.
+  - Not done: pairing a new Mac from an already-paired phone, which has no screen yet; the low-severity review findings.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of `SecureChannel.swift` (`RecentHelloNonces`, the class change), `ChannelSessions.swift`, `LinkStateStore.swift`, `PairingStore.swift` (`AgentFolder.read`), `SecurePhoneLink.swift` and `AgentSocket.swift` (`waitFor`, `clientState`);
+  - that the Keychain attributes in `LinkStateStore` are right and the item can be read while the phone is locked, on the iPhone 14 Pro;
+  - the BLE wake-up test (`docs/BLE_WAKE_TEST.md`) after these fixes, including the first request after a relaunch;
+  - Ctrl-C on a real `ssh` closes the phone's prompt;
+  - Forget Mac and the notification warning, on a device;
+  - nothing ran on hardware; the assistant only ran the Swift tests and the Xcode builds.
+- **Commit / PR:** `fix/secure-channel-hardening` (719503c), `fix/bluetooth-relaunch` (fb797c2), `fix/phone-unpair-notifications` (fc4bc26), `fix/agent-hardening` (140cff7).
