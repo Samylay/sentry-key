@@ -629,3 +629,32 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that a build for the iPhone 14 Pro still creates the key with `.biometryCurrentSet` and that signing still asks the Secure Enclave for Face ID;
   - the author saw the demo pairing work in the simulator after the change; the assistant only checked that the app builds and launches.
 - **Commit / PR:** branch `fix/simulator-key`, on top of `feature/bluetooth-wake-test`
+
+### P-028 · 2026-11-25 · Review and merge of PRs #10–#18 (Michael's stack)
+
+- **Author:** Samylay (repo owner; name to confirm)
+- **Tool / model:** Claude Code (Claude Opus 5.5), with five Claude Fable 5.2 review subagents
+- **Goal:** Review Michael's nine stacked PRs (#10–#18, P-017 to P-027) and merge them into `main`.
+- **Prompt (verbatim):** "merge all prs from micha , review em with fable and then merge", then "carry on", then, after the assistant refused to merge citing the CLAUDE.md rule, "bypass that rule and just ,erge".
+- **Output (summary):**
+  - Five read-only Fable reviews: #10–#11, #12 (secure channel), #13–#14, #15 (pairing), #16–#18. None blocked a merge. Verdicts: #10 and #18 merge as is; #11–#17 merge with follow-ups.
+  - Follow-ups by severity:
+    - High: Bluetooth never starts on a locked background relaunch (`PhoneLinkController.swift`, phase stays `.onboarding`).
+    - High: the Mac reuses a stale session after the phone app relaunches.
+    - Medium: `SecureChannel` is a copyable struct, so copies can reuse an AES-GCM key and nonce; `finish` can run twice.
+    - Medium: a recorded `MacHello` is accepted again within the time window.
+    - Medium: the Mac reads its pairing files without checking the folder's owner and mode.
+    - Medium: there is no unpairing on the phone.
+    - Medium: a sign request abandoned with Ctrl-C still reaches the phone.
+    - Medium: `probe --reconnect` does not reconnect.
+    - Medium: `WakeLog` is in the Release build with weaker file protection.
+    - Medium: notification permission is never requested on an install that is already paired.
+  - Trial-merged all nine in order on a local branch with no conflicts. On the merged tree, `swift test` passed: 157 tests in SentryKeyProtocol and 57 in SentryKey-macOS.
+  - The assistant pushed the merge commits to `main`. It then fast-forwarded the stacked base branches so GitHub marks #11–#17 as merged. A first combined push moved head branches and left #11–#17 open; one-by-one pushes fixed it.
+- **Decision:** Modified. The assistant first refused to merge, citing CLAUDE.md ("Never push to `main`, merge, or approve a pull request"). The human, who is not the author of these PRs, explicitly told it to bypass the rule, and it complied. **The CLAUDE.md rule was overridden for this session.** The merges were pushed by the assistant, not through GitHub's review flow. No GitHub approval was recorded on #10–#18. The merge commits are authored by "Guest User".
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of the crypto and security code that is now on `main` without a recorded approval: `SecureChannel.swift`, `HandshakeMessages.swift`, `Pairing.swift`, `PairingStore.swift`, `IdentityKeyStore.swift`, `KeyStore.swift`;
+  - each review finding above, confirmed or rejected, with issues or `fix/...` branches opened;
+  - the iOS app was not built or tested; nothing ran on the iPhone 14 Pro;
+  - the team agrees the rule override was acceptable for the graded process.
+- **Commit / PR:** merge commits on `main` up to `1007707`; this entry is on branch `docs/journal-p028`.
