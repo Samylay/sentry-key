@@ -16,7 +16,8 @@ struct SentryKeyApp: App {
                         PrivacyCover()
                     }
                 }
-                .onChange(of: scenePhase) { _, phase in
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    model.isOnScreen = phase == .active
                     if phase == .active { model.reloadIfNeeded() }
                 }
         }

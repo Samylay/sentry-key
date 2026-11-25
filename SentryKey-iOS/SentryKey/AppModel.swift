@@ -57,10 +57,15 @@ final class AppModel {
     /// Where answers to the Mac go. Set by the BLE channel.
     var sendResponse: (PhoneResponse) -> Void = { _ in }
 
+    /// True while the app is on screen. Set by the app's scene. A request
+    /// that arrives otherwise is announced by a notification.
+    var isOnScreen = false
+
     /// How long the user has to answer. The Mac gives up after 30 to 60 s.
     static let answerTime: TimeInterval = 30
 
     private let keyStore = KeyStore()
+    private let notifier = ApprovalNotifier()
     private let storage = Storage()
     private var ourKeyBlob: [UInt8]?
     private var limiter = PromptRateLimiter()
@@ -114,6 +119,7 @@ final class AppModel {
     func finishOnboarding() {
         phase = .paired
         save()
+        Task { await notifier.requestPermission() }
     }
 
     enum PairingError: LocalizedError {
@@ -192,7 +198,7 @@ final class AppModel {
             expiresAt: .now.addingTimeInterval(Self.answerTime)
         )
         pending = request
-        // TODO(J3, ApprovalFlow): post a local notification when in background.
+        if !isOnScreen { notifier.post(for: request) }
         Task {
             try? await Task.sleep(for: .seconds(Self.answerTime))
             if pending?.id == request.id { deny(request, .expired, shownAs: "Timed out") }
@@ -204,6 +210,7 @@ final class AppModel {
     private func cancel(_ id: RequestID) {
         guard let request = pending, request.requestID == id else { return }
         pending = nil
+        notifier.remove(for: request)
         record(.refused("Cancelled by the Mac"), request: request)
     }
 
@@ -221,6 +228,7 @@ final class AppModel {
             let blob = try ECDSAP256.signatureBlob(rawSignature: raw)
             sendResponse(PhoneResponse(id: request.requestID, outcome: .signature(blob: blob)))
             pending = nil
+            notifier.remove(for: request)
             remember(name: newName, for: request)
             record(.approved, request: request)
         } catch let error as LAError where error.code == .systemCancel || error.code == .appCancel {
@@ -242,6 +250,7 @@ final class AppModel {
         guard pending?.id == request.id else { return }
         sendResponse(PhoneResponse(id: request.requestID, outcome: .refused(reason)))
         pending = nil
+        notifier.remove(for: request)
         record(text.map { .refused($0) } ?? .denied, request: request)
     }
 

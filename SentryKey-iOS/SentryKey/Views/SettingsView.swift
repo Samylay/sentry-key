@@ -35,10 +35,16 @@ struct SettingsView: View {
                 Button("Show a demo request") {
                     DemoRequest.send(to: model)
                 }
+                Button("Show a demo request in 5 seconds") {
+                    Task {
+                        try? await Task.sleep(for: .seconds(5))
+                        DemoRequest.send(to: model)
+                    }
+                }
             } header: {
                 Text("Testing without a Mac")
             } footer: {
-                Text("Builds a sign-in request on this iPhone, signed by a throwaway server key, and runs the real checks, Face ID and signature. Nothing leaves the phone.")
+                Text("Builds a sign-in request on this iPhone, signed by a throwaway server key, and runs the real checks, Face ID and signature. Nothing leaves the phone. With the delay, leave the app or lock the phone before the request arrives to see its notification.")
             }
             #endif
         }
