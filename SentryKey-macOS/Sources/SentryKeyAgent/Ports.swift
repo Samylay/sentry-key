@@ -53,6 +53,8 @@ public enum AgentEvent: Equatable, Sendable {
     case timedOut
     case phoneUnreachable
     case queueFull
+    /// ssh went away (Ctrl-C) before the phone answered.
+    case cancelledByClient
     /// The phone answered with a signature that does not verify.
     case invalidSignatureFromPhone
     /// ssh asked for a key that is not the paired phone's.

@@ -22,17 +22,24 @@ public struct AgentFolder: Sendable {
         path + "/" + name
     }
 
+    /// Largest file the agent reads from its folder. Its files are a few
+    /// hundred bytes; anything bigger was not written by the agent.
+    static let maxFileLength = 64 * 1024
+
     /// Creates the folder if needed, and refuses one that other users can
     /// enter or that belongs to someone else.
     func prepare() throws {
         if mkdir(path, 0o700) == 0 { return }
         guard errno == EEXIST else { throw AgentStorageError.system(call: "mkdir", code: errno) }
+        guard Self.isPrivate(path, type: S_IFDIR) else { throw AgentStorageError.unsafeDirectory }
+    }
 
+    /// True if `path` is itself (not through a symbolic link) of `type`,
+    /// belongs to this user, and gives other users no access at all.
+    private static func isPrivate(_ path: String, type: mode_t) -> Bool {
         var info = stat()
-        guard lstat(path, &info) == 0 else { throw AgentStorageError.system(call: "lstat", code: errno) }
-        guard info.st_mode & S_IFMT == S_IFDIR, info.st_uid == geteuid(), info.st_mode & 0o077 == 0 else {
-            throw AgentStorageError.unsafeDirectory
-        }
+        guard lstat(path, &info) == 0 else { return false }
+        return info.st_mode & S_IFMT == type && info.st_uid == geteuid() && info.st_mode & 0o077 == 0
     }
 
     func write(_ data: Data, to name: String) throws {
@@ -41,8 +48,19 @@ public struct AgentFolder: Sendable {
         guard chmod(file(name), 0o600) == 0 else { throw AgentStorageError.system(call: "chmod", code: errno) }
     }
 
+    /// Reads one of the agent's files, or returns nil if the folder or the
+    /// file could have been written by another user: a planted
+    /// `paired-phone.json` would make another phone "the phone". Checking
+    /// the folder is enough to stop a swap after the check, since only this
+    /// user can change what it contains.
     func read(_ name: String) -> Data? {
-        FileManager.default.contents(atPath: file(name))
+        guard Self.isPrivate(path, type: S_IFDIR), Self.isPrivate(file(name), type: S_IFREG),
+              let data = FileManager.default.contents(atPath: file(name)),
+              data.count <= Self.maxFileLength
+        else {
+            return nil
+        }
+        return data
     }
 }
 
@@ -93,6 +111,8 @@ public struct PairingStore: PublicKeyStore {
         guard let data = folder.read(Self.fileName),
               let record = try? JSONDecoder().decode(Record.self, from: data),
               record.identityKey.count == ChannelLimits.publicKeyLength,
+              // A point on the curve, not just 65 bytes.
+              (try? P256.Signing.PublicKey(x963Representation: record.identityKey)) != nil,
               (try? ECDSAP256.x963Point(fromPublicKeyBlob: Array(record.sshKeyBlob))) != nil
         else {
             return nil

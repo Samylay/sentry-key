@@ -70,6 +70,7 @@ ssh -o IdentityAgent=/tmp/sentrykey-dev/agent.sock user@server
 
 ```bash
 swift run sentrykey-agent pair    # shows a QR code: scan it in the iPhone app
+swift run sentrykey-agent pair --replace   # pairs a new phone in place of the current one
 swift run sentrykey-agent run     # then point ssh at the socket it prints
 swift run sentrykey-agent probe   # measures whether, and how fast, the iPhone answers
 ```

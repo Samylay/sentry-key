@@ -23,7 +23,7 @@ private func fail(_ message: String) -> Never {
 }
 
 private let usage = """
-    usage: sentrykey-agent pair [--folder <path>]
+    usage: sentrykey-agent pair [--folder <path>] [--replace]
            sentrykey-agent run  [--folder <path>] [--socket <path>]
            sentrykey-agent probe [--folder <path>] [--count <n>] [--interval <seconds>] [--reconnect]
     """
@@ -36,6 +36,7 @@ private var socketPath: String?
 private var probeCount = 10
 private var probeInterval = 30
 private var probeReconnects = false
+private var replacePairedPhone = false
 while let argument = arguments.next() {
     switch argument {
     case "--folder":
@@ -52,6 +53,8 @@ while let argument = arguments.next() {
         probeInterval = value
     case "--reconnect":
         probeReconnects = true
+    case "--replace":
+        replacePairedPhone = true
     default:
         fail(usage)
     }
@@ -68,6 +71,11 @@ do {
 
 switch command {
 case "pair":
+    // Pairing again replaces the phone, and with it the SSH key offered to
+    // ssh. Never silently: the old key stops working through this Mac.
+    if store.load() != nil, !replacePairedPhone {
+        fail("an iPhone is already paired with this Mac. To replace it, run: sentrykey-agent pair --replace")
+    }
     Task {
         do {
             let result = try await BluetoothPairing.pair(identity: identity) { code in
