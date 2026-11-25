@@ -25,13 +25,28 @@ struct KeyStore {
     private static let service = "SentryKey"
     private static let account = "ssh-signing-key"
 
+    /// The simulator has no Secure Enclave that can tie a key to Face ID:
+    /// asking for it fails with "not supported on iOS Simulator". There, and
+    /// only there, the key is created without the Face ID condition, and
+    /// `sign` asks for Face ID itself. This is weaker (the app could skip the
+    /// question) and exists only so the screens can be tried without an
+    /// iPhone. `targetEnvironment(simulator)` is decided when compiling: none
+    /// of it is in a build that runs on a device.
+    private static var keyFlags: SecAccessControlCreateFlags {
+        #if targetEnvironment(simulator)
+        [.privateKeyUsage]
+        #else
+        [.privateKeyUsage, .biometryCurrentSet]
+        #endif
+    }
+
     /// Same flags at creation and at every use.
     private static func accessControl() throws -> SecAccessControl {
         var error: Unmanaged<CFError>?
         guard let control = SecAccessControlCreateWithFlags(
             nil,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            [.privateKeyUsage, .biometryCurrentSet],
+            keyFlags,
             &error
         ) else {
             throw Failure.accessControl
@@ -74,11 +89,18 @@ struct KeyStore {
         // One evaluation authorizes this context for one signature. The
         // Secure Enclave checks it again itself, so skipping this call
         // cannot bypass Face ID: signing would fail instead.
+        #if targetEnvironment(simulator)
+        // See `keyFlags`: the simulated key cannot ask for Face ID itself.
+        let allowed = try await context.evaluatePolicy(
+            .deviceOwnerAuthenticationWithBiometrics, localizedReason: reason
+        )
+        #else
         let allowed = try await context.evaluateAccessControl(
             Self.accessControl(),
             operation: .useKeySign,
             localizedReason: reason
         )
+        #endif
         guard allowed else { throw Failure.faceIDRefused }
         // From here on, signing must not show a second prompt (which would
         // block this thread). If the context is not enough, it fails instead.

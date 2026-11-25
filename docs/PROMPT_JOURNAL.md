@@ -613,3 +613,19 @@ Copy this block for each new entry. Number entries in order: P-001, P-002, and s
   - that the probe's reasoning holds on the device: a request with one byte of data is refused before any prompt and before the rate limit;
   - whether the event recording should stay in release builds. It writes event names and times to a file readable while the phone is locked.
 - **Commit / PR:** branch `feature/bluetooth-wake-test`, stacked on pull request #16
+
+### P-027 · 2026-11-25 · Let the SSH key be created in the simulator
+
+- **Author:** michael-rousseau
+- **Tool / model:** Claude Code (Claude Fable 5.2)
+- **Goal:** Try the app's screens in the iOS simulator, where "Pair without a Mac (demo)" failed with "Authentication failure."
+- **Prompt (verbatim):** "tu peux run le code, comme ca je teste sur l'emulateur", then a screenshot of the error, then "ca ne passe pas".
+- **Output (summary):**
+  - Cause, read in the simulator's log: creating a Secure Enclave key with `.biometryCurrentSet` calls `evaluateAccessControl`, which answers `Code=-1020 "This call is not supported on iOS Simulator."`
+  - `SentryKey-iOS/SentryKey/Security/KeyStore.swift`: under `#if targetEnvironment(simulator)` only, the key is created with `.privateKeyUsage` alone, and `sign` asks for Face ID with `evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics)` before signing.
+- **Decision:** Accepted, for the simulator only. The assistant's first explanation (Face ID not enrolled in the simulator) was wrong and was dropped once the log was read. In the simulator, Face ID is now checked by the app and not by the Secure Enclave: weaker, and no proof that the real protection works. A build for a device does not contain this code.
+- **Human verification:** PENDING: human to complete. Check:
+  - line-by-line review of the two `#if targetEnvironment(simulator)` blocks in `KeyStore.swift`;
+  - that a build for the iPhone 14 Pro still creates the key with `.biometryCurrentSet` and that signing still asks the Secure Enclave for Face ID;
+  - the author saw the demo pairing work in the simulator after the change; the assistant only checked that the app builds and launches.
+- **Commit / PR:** branch `fix/simulator-key`, on top of `feature/bluetooth-wake-test`
